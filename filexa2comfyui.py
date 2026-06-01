@@ -32,7 +32,7 @@ except Exception:  # pragma: no cover - normal outside ComfyUI/tests.
 
 
 CONNECTOR_NAME = "Filexa2ComfyUI Connector"
-CONNECTOR_VERSION = "0.2.2"
+CONNECTOR_VERSION = "0.2.3"
 CONNECTOR_PANEL_LABEL = "Filexa2ComfyUI"
 FILEXA_ENGINE = "comfyui"
 FILEXA_BOT_URL = "https://t.me/FilexaAIBot"

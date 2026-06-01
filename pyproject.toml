@@ -1,0 +1,27 @@
+[project]
+name = "filexa2comfyui"
+version = "0.2.3"
+description = "Connects ComfyUI to Filexa local generation through saved image and video workflows."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+authors = [
+    { name = "Filexa" },
+]
+classifiers = [
+    "Operating System :: OS Independent",
+]
+dynamic = ["dependencies"]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+[project.urls]
+Repository = "https://github.com/Teutonick/Filexa2ComfyUI"
+Documentation = "https://github.com/Teutonick/Filexa2ComfyUI#readme"
+"Bug Tracker" = "https://github.com/Teutonick/Filexa2ComfyUI/issues"
+
+[tool.comfy]
+PublisherId = "teutonick"
+DisplayName = "Filexa2ComfyUI"
+Icon = "https://raw.githubusercontent.com/Teutonick/Filexa2ComfyUI/main/web/filexa.png"

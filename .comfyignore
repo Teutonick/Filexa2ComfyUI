@@ -1,0 +1,20 @@
+# Local runtime state
+data/
+*.log
+
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Editor and OS files
+.vscode/
+.idea/
+.github/
+.DS_Store
+Thumbs.db
+
+# Development-only artifacts
+tests/
+*.psd
+*.tmp

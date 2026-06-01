@@ -1,0 +1,17 @@
+# Local Filexa2ComfyUI state. May contain tokens, workflow snapshots, and task cache hints.
+data/
+
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local logs and temporary files
+*.log
+*.tmp
+
+# Editor and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

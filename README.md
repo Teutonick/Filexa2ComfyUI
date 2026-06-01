@@ -19,6 +19,10 @@ Not affiliated with, endorsed by, or sponsored by ComfyUI.
 - `LICENSE` - source code license.
 - `NOTICE.md` - legal notices and disclaimers.
 - `SECURITY.md` - vulnerability reporting policy.
+- `pyproject.toml` - Comfy Registry metadata.
+- `.comfyignore` - files excluded from the Comfy Registry archive.
+- `.github/workflows/publish_action.yml` - optional Comfy Registry publish workflow.
+- `plugin_info.json` - lightweight GitHub update-check metadata for this connector.
 - `requirements.txt` - optional dependency hint for ComfyUI managers.
 
 Prebuilt binaries are not distributed in this repository.
@@ -30,7 +34,19 @@ Prebuilt binaries are not distributed in this repository.
 2. Start ComfyUI once and verify that your target image and/or video workflow runs manually.
 3. Install the connector using one of these methods:
 
-   Recommended, through the ComfyUI interface if ComfyUI-Manager is available:
+   Recommended after Registry publication, through ComfyUI-Manager:
+
+   - open `Manager` -> `Custom Nodes Manager`;
+   - search for `Filexa2ComfyUI` or `filexa2comfyui`;
+   - install the node and restart ComfyUI.
+
+   Comfy CLI after Registry publication:
+
+   ```powershell
+   comfy node install filexa2comfyui
+   ```
+
+   Git URL install through the ComfyUI interface if ComfyUI-Manager is available:
 
    - open `Manager` -> `Custom Nodes Manager` or `Install via Git URL`;
    - install from `https://github.com/Teutonick/Filexa2ComfyUI`;
@@ -47,7 +63,7 @@ Prebuilt binaries are not distributed in this repository.
 
    `external_soft/comfyui` -> `ComfyUI/custom_nodes/ComfyUI-Filexa2ComfyUI`
 
-4. If your ComfyUI environment does not already include `requests`, install:
+4. If your ComfyUI environment does not already include the declared dependencies, install:
    `pip install -r ComfyUI/custom_nodes/ComfyUI-Filexa2ComfyUI/requirements.txt`
 5. Restart ComfyUI.
 6. Open the ComfyUI web UI and click the floating `Filexa` button. Drag it by the `::` handle if
@@ -71,7 +87,25 @@ of the Filexa reference image while an I2I/I2V task is active.
 On startup the panel checks the public GitHub `plugin_info.json`. If a newer version is available,
 an update marker and `Update` button appear next to the version. The built-in updater works for Git
 installations by running `git pull --ff-only` in the custom node folder; restart ComfyUI after it
-downloads an update.
+downloads an update. It does not run `pip install` or install packages at runtime.
+
+## Comfy Registry Metadata
+
+The Registry node id is `filexa2comfyui`, while the user-facing display name is `Filexa2ComfyUI`.
+The install folder may still be named `ComfyUI-Filexa2ComfyUI` for manual Git installs.
+
+Before publishing, make sure the `PublisherId` in `pyproject.toml` matches the publisher id created
+on Comfy Registry. The bundled value is `teutonick` to match the planned GitHub namespace.
+
+Publishing is done from the repository root with:
+
+```powershell
+comfy node publish
+```
+
+The included GitHub Actions workflow can publish the node automatically when `pyproject.toml`
+changes on `main`. Add the Comfy Registry publishing API key as a repository secret named
+`REGISTRY_ACCESS_TOKEN` before enabling that workflow.
 
 ## Snapshot Model
 

@@ -3,7 +3,7 @@ import { api } from "../../scripts/api.js";
 
 const ROOT_ID = "filexa2comfyui-root";
 const POSITION_KEY = "filexa2comfyui-position";
-const ICON_URL = new URL("./filexa.webp", import.meta.url).toString();
+const ICON_URL = new URL("./filexa.png", import.meta.url).toString();
 const SNAPSHOT_TARGETS = [
   { id: "t2i", label: "Text to Image", short: "T2I", group: "Image" },
   { id: "i2i", label: "Image to Image", short: "I2I", group: "Image" },
@@ -281,7 +281,7 @@ function updateStatusText(update) {
 
 async function applyPluginUpdate() {
   const ok = window.confirm(
-    "Run git pull --ff-only inside this Filexa2ComfyUI custom node folder? Restart ComfyUI after a successful update.",
+    "Update Filexa2ComfyUI from GitHub now? This runs git pull --ff-only in this custom node folder. Restart ComfyUI after a successful update.",
   );
   if (!ok) {
     return null;
