@@ -106,9 +106,14 @@ comfy node publish
 ```
 
 The included GitHub Actions workflow is manual-only (`workflow_dispatch`) so normal pushes do not
-try to publish the node. Add the Comfy Registry publishing API key as a repository secret named
+try to publish the node. It uses `actions/checkout@v6`, `actions/setup-python@v6`, and
+`comfy node publish --token "$REGISTRY_ACCESS_TOKEN"` directly, avoiding the older Node 20 publish
+action wrapper. Add the Comfy Registry publishing API key as a repository secret named
 `REGISTRY_ACCESS_TOKEN`, then run `Publish to Comfy Registry` from the Actions tab when you are
-ready to publish.
+ready to publish. After publishing, the workflow also sends the matching `CHANGELOG.md` section to
+the Comfy Registry version changelog API so the Registry `Updates` panel is populated. To backfill
+the changelog for an already published version, run the same workflow with `publish_node` set to
+`false`.
 
 ## Snapshot Model
 

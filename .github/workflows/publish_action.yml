@@ -2,9 +2,16 @@ name: Publish to Comfy Registry
 
 on:
   workflow_dispatch:
+    inputs:
+      publish_node:
+        description: "Publish node before updating the Registry changelog"
+        required: true
+        default: true
+        type: boolean
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
 
 jobs:
   publish-node:
@@ -12,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Check registry token
         env:
@@ -23,7 +30,82 @@ jobs:
             exit 1
           fi
 
-      - name: Publish custom node
-        uses: Comfy-Org/publish-node-action@main
+      - name: Set up Python
+        if: ${{ inputs.publish_node }}
+        uses: actions/setup-python@v6
         with:
-          personal_access_token: ${{ secrets.REGISTRY_ACCESS_TOKEN }}
+          python-version: "3.10"
+          cache: "pip"
+
+      - name: Install Comfy CLI
+        if: ${{ inputs.publish_node }}
+        run: python -m pip install --upgrade comfy-cli
+
+      - name: Publish custom node
+        if: ${{ inputs.publish_node }}
+        env:
+          REGISTRY_ACCESS_TOKEN: ${{ secrets.REGISTRY_ACCESS_TOKEN }}
+        run: comfy node publish --token "$REGISTRY_ACCESS_TOKEN"
+
+      - name: Update Registry changelog
+        env:
+          REGISTRY_ACCESS_TOKEN: ${{ secrets.REGISTRY_ACCESS_TOKEN }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import re
+          import time
+          import urllib.error
+          import urllib.request
+          from pathlib import Path
+
+          root = Path.cwd()
+          pyproject = (root / "pyproject.toml").read_text(encoding="utf-8")
+          changelog_text = (root / "CHANGELOG.md").read_text(encoding="utf-8")
+
+          def read_toml_string(pattern: str, label: str) -> str:
+            match = re.search(pattern, pyproject, re.MULTILINE)
+            if not match:
+              raise RuntimeError(f"Could not read {label} from pyproject.toml")
+            return match.group(1)
+
+          publisher_id = read_toml_string(r'^\s*PublisherId\s*=\s*"([^"]+)"', "PublisherId")
+          node_id = read_toml_string(r'^\s*name\s*=\s*"([^"]+)"', "project.name")
+          version = read_toml_string(r'^\s*version\s*=\s*"([^"]+)"', "project.version")
+
+          section = re.search(
+            rf"^##\s+{re.escape(version)}(?:\s+-\s+[^\n]+)?\s*\n(?P<body>.*?)(?=^##\s+|\Z)",
+            changelog_text,
+            re.MULTILINE | re.DOTALL,
+          )
+          if not section:
+            raise RuntimeError(f"CHANGELOG.md has no section for version {version}")
+
+          changelog = section.group("body").strip()
+          if not changelog:
+            raise RuntimeError(f"CHANGELOG.md section for version {version} is empty")
+
+          token = os.environ["REGISTRY_ACCESS_TOKEN"]
+          url = f"https://api.comfy.org/publishers/{publisher_id}/nodes/{node_id}/versions/{version}"
+          payload = json.dumps({"changelog": changelog, "deprecated": False}).encode("utf-8")
+          headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+          }
+
+          for attempt in range(1, 7):
+            request = urllib.request.Request(url, data=payload, headers=headers, method="PUT")
+            try:
+              with urllib.request.urlopen(request, timeout=30) as response:
+                print(f"Updated Comfy Registry changelog for {node_id} {version}: HTTP {response.status}")
+                break
+            except urllib.error.HTTPError as error:
+              body = error.read().decode("utf-8", "replace")
+              retryable = error.code in {404, 409, 429, 500, 502, 503, 504}
+              if retryable and attempt < 6:
+                print(f"Registry changelog update attempt {attempt} failed with HTTP {error.code}; retrying...")
+                time.sleep(10)
+                continue
+              raise RuntimeError(f"Registry changelog update failed: HTTP {error.code}: {body}") from error
+          PY

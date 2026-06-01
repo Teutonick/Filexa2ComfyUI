@@ -1,9 +1,9 @@
 [project]
 name = "filexa2comfyui"
-version = "0.2.4"
+version = "0.2.5"
 description = "Run local ComfyUI T2I/I2I/T2V/I2V workflows from Telegram via @FilexaAIBot, using your PC resources for image and video generation."
 readme = "README.md"
-license = { file = "LICENSE" }
+license = { text = "MIT License" }
 requires-python = ">=3.10"
 authors = [
     { name = "Filexa" },

@@ -107,9 +107,14 @@ comfy node publish
 ```
 
 В комплекте есть GitHub Actions workflow, но он запускается только вручную (`workflow_dispatch`),
-поэтому обычные push не пытаются публиковать node. Добавь publishing API key Comfy Registry в
-секрет репозитория с именем `REGISTRY_ACCESS_TOKEN`, затем запусти `Publish to Comfy Registry` на
-вкладке Actions, когда будешь готов к публикации.
+поэтому обычные push не пытаются публиковать node. Он использует `actions/checkout@v6`,
+`actions/setup-python@v6` и прямой запуск `comfy node publish --token "$REGISTRY_ACCESS_TOKEN"`,
+без старой Node 20 action-обертки для публикации. Добавь publishing API key Comfy Registry в секрет
+репозитория с именем `REGISTRY_ACCESS_TOKEN`, затем запусти `Publish to Comfy Registry` на вкладке
+Actions, когда будешь готов к публикации. После публикации workflow также отправляет
+соответствующий раздел `CHANGELOG.md` в API changelog версии Comfy Registry, чтобы панель `Updates`
+на странице Registry не была пустой. Чтобы заполнить changelog для уже опубликованной версии,
+запусти этот же workflow с `publish_node = false`.
 
 ## Снапшоты
 
