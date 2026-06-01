@@ -1,0 +1,166 @@
+.filexa2comfyui-button {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 1200;
+  border: 1px solid var(--border-color, #4b5563);
+  background: var(--comfy-menu-bg, #202124);
+  color: var(--fg-color, #f8fafc);
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-weight: 700;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  cursor: pointer;
+}
+
+.filexa2comfyui-panel {
+  position: fixed;
+  right: 18px;
+  bottom: 64px;
+  width: min(520px, calc(100vw - 36px));
+  max-height: min(760px, calc(100vh - 96px));
+  overflow: auto;
+  z-index: 1200;
+  border: 1px solid var(--border-color, #4b5563);
+  border-radius: 8px;
+  background: var(--comfy-menu-bg, #202124);
+  color: var(--fg-color, #f8fafc);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.34);
+  font: 13px/1.45 Arial, sans-serif;
+}
+
+.filexa2comfyui-hidden {
+  display: none;
+}
+
+.filexa2comfyui-panel header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-color, #4b5563);
+}
+
+.filexa2comfyui-panel h2,
+.filexa2comfyui-panel h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.filexa2comfyui-panel h3 {
+  font-size: 13px;
+  color: var(--fg-color, #f8fafc);
+}
+
+.filexa2comfyui-panel section {
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.filexa2comfyui-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.filexa2comfyui-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.filexa2comfyui-field {
+  display: grid;
+  gap: 4px;
+}
+
+.filexa2comfyui-field label {
+  color: var(--descrip-text, #cbd5e1);
+  font-size: 12px;
+}
+
+.filexa2comfyui-field input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--border-color, #4b5563);
+  border-radius: 6px;
+  background: var(--comfy-input-bg, #111827);
+  color: var(--input-text, #f8fafc);
+  padding: 8px 9px;
+}
+
+.filexa2comfyui-panel button {
+  border: 1px solid var(--border-color, #4b5563);
+  border-radius: 6px;
+  background: var(--comfy-input-bg, #111827);
+  color: var(--fg-color, #f8fafc);
+  padding: 7px 10px;
+  cursor: pointer;
+}
+
+.filexa2comfyui-panel button.primary {
+  background: #166534;
+  border-color: #15803d;
+}
+
+.filexa2comfyui-panel button.danger {
+  background: #7f1d1d;
+  border-color: #991b1b;
+}
+
+.filexa2comfyui-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: var(--descrip-text, #cbd5e1);
+}
+
+.filexa2comfyui-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: #64748b;
+}
+
+.filexa2comfyui-dot.enabled {
+  background: #16a34a;
+}
+
+.filexa2comfyui-dot.running {
+  background: #f59e0b;
+}
+
+.filexa2comfyui-dot.failed,
+.filexa2comfyui-dot.error {
+  background: #dc2626;
+}
+
+.filexa2comfyui-snapshot {
+  display: grid;
+  gap: 7px;
+  padding: 9px;
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  border-radius: 8px;
+}
+
+.filexa2comfyui-muted {
+  color: var(--descrip-text, #cbd5e1);
+}
+
+.filexa2comfyui-status {
+  white-space: pre-wrap;
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 8px;
+  padding: 9px;
+}
+
+.filexa2comfyui-diagnostics {
+  margin: 0;
+  padding-left: 18px;
+}

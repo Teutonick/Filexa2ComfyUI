@@ -1,0 +1,16 @@
+from __future__ import annotations
+
+from .filexa2comfyui import CONNECTOR, CONNECTOR_NAME, CONNECTOR_VERSION
+
+NODE_CLASS_MAPPINGS = {}
+NODE_DISPLAY_NAME_MAPPINGS = {}
+WEB_DIRECTORY = "./web"
+
+__all__ = [
+    "CONNECTOR",
+    "CONNECTOR_NAME",
+    "CONNECTOR_VERSION",
+    "NODE_CLASS_MAPPINGS",
+    "NODE_DISPLAY_NAME_MAPPINGS",
+    "WEB_DIRECTORY",
+]
