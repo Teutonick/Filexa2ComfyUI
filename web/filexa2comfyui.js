@@ -2,6 +2,14 @@ import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 
 const ROOT_ID = "filexa2comfyui-root";
+const POSITION_KEY = "filexa2comfyui-position";
+const ICON_URL = new URL("./filexa.webp", import.meta.url).toString();
+const SNAPSHOT_TARGETS = [
+  { id: "t2i", label: "Text to Image", short: "T2I", group: "Image" },
+  { id: "i2i", label: "Image to Image", short: "I2I", group: "Image" },
+  { id: "t2v", label: "Text to Video", short: "T2V", group: "Video" },
+  { id: "i2v", label: "Image to Video", short: "I2V", group: "Video" },
+];
 
 function installStylesheet() {
   if (document.getElementById("filexa2comfyui-css")) {
@@ -85,7 +93,7 @@ function createElement(tag, attrs = {}, children = []) {
 
 function snapshotText(snapshot) {
   if (!snapshot?.saved) {
-    return "Snapshot empty";
+    return "Workflow not captured";
   }
   const saved = snapshot.saved_at_utc ? new Date(snapshot.saved_at_utc).toLocaleString() : "-";
   const prompt = snapshot.prompt_binding
@@ -100,7 +108,15 @@ function snapshotText(snapshot) {
     `Prompt: ${prompt}`,
     `Image input: ${image}`,
     `Model: ${snapshot.model_hint || "-"}`,
+    ...(snapshot.issues?.length ? [`Issue: ${snapshot.issues.join(" ")}`] : []),
   ].join("\n");
+}
+
+function snapshotDotClass(snapshot) {
+  if (!snapshot?.saved) {
+    return "empty";
+  }
+  return snapshot.valid ? "ready" : "invalid";
 }
 
 function statusText(state) {
@@ -132,14 +148,165 @@ function statusText(state) {
   return lines.join("\n");
 }
 
+function createSnapshotGroup(groupName, targets, capture, summaries, dots) {
+  return createElement("div", { class: "filexa2comfyui-snapshot-group" }, [
+    createElement("strong", { text: `${groupName} workflows` }),
+    createElement("div", { class: "filexa2comfyui-snapshot-row" }, targets.map((target) => {
+      return createElement("div", { class: "filexa2comfyui-snapshot" }, [
+        createElement("div", { class: "filexa2comfyui-snapshot-title" }, [
+          dots[target.id],
+          createElement("span", { text: `${target.label} (${target.short})` }),
+        ]),
+        createElement("button", {
+          text: "Capture Current Workflow",
+          onclick: async () => {
+            try {
+              await capture(target.id);
+            } catch (error) {
+              alert(error.message || error);
+            }
+          },
+        }),
+        summaries[target.id],
+      ]);
+    })),
+  ]);
+}
+
+function loadSavedPosition(root) {
+  try {
+    const raw = window.localStorage.getItem(POSITION_KEY);
+    if (!raw) {
+      return;
+    }
+    const position = JSON.parse(raw);
+    const left = Number(position.left);
+    const top = Number(position.top);
+    if (!Number.isFinite(left) || !Number.isFinite(top)) {
+      return;
+    }
+    root.style.left = `${Math.max(0, Math.min(window.innerWidth - 80, left))}px`;
+    root.style.top = `${Math.max(0, Math.min(window.innerHeight - 40, top))}px`;
+    root.style.right = "auto";
+    root.style.bottom = "auto";
+  } catch (_error) {
+    window.localStorage.removeItem(POSITION_KEY);
+  }
+}
+
+function savePosition(root) {
+  const rect = root.getBoundingClientRect();
+  window.localStorage.setItem(
+    POSITION_KEY,
+    JSON.stringify({ left: Math.round(rect.left), top: Math.round(rect.top) }),
+  );
+}
+
+function installDrag(root, handle) {
+  let dragging = null;
+  handle.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  });
+  handle.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = root.getBoundingClientRect();
+    root.style.left = `${rect.left}px`;
+    root.style.top = `${rect.top}px`;
+    root.style.right = "auto";
+    root.style.bottom = "auto";
+    dragging = {
+      pointerId: event.pointerId,
+      offsetX: event.clientX - rect.left,
+      offsetY: event.clientY - rect.top,
+    };
+    handle.setPointerCapture(event.pointerId);
+    root.classList.add("filexa2comfyui-dragging");
+  });
+  handle.addEventListener("pointermove", (event) => {
+    if (!dragging || event.pointerId !== dragging.pointerId) {
+      return;
+    }
+    event.preventDefault();
+    const rect = root.getBoundingClientRect();
+    const maxLeft = Math.max(0, window.innerWidth - rect.width);
+    const maxTop = Math.max(0, window.innerHeight - 38);
+    root.style.left = `${Math.max(0, Math.min(maxLeft, event.clientX - dragging.offsetX))}px`;
+    root.style.top = `${Math.max(0, Math.min(maxTop, event.clientY - dragging.offsetY))}px`;
+  });
+  const finish = (event) => {
+    if (!dragging || event.pointerId !== dragging.pointerId) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    handle.releasePointerCapture(event.pointerId);
+    dragging = null;
+    root.classList.remove("filexa2comfyui-dragging");
+    savePosition(root);
+  };
+  handle.addEventListener("pointerup", finish);
+  handle.addEventListener("pointercancel", finish);
+}
+
+function renderReferencePreviews(container, previews) {
+  container.innerHTML = "";
+  const visiblePreviews = Array.isArray(previews) ? previews.filter((item) => item?.data_url) : [];
+  if (!visiblePreviews.length) {
+    container.classList.add("filexa2comfyui-hidden");
+    return;
+  }
+  container.classList.remove("filexa2comfyui-hidden");
+  container.append(createElement("h3", { text: "Filexa reference" }));
+  const grid = createElement("div", { class: "filexa2comfyui-reference-grid" });
+  for (const preview of visiblePreviews) {
+    const label = preview.label || "reference";
+    grid.append(
+      createElement("figure", { class: "filexa2comfyui-reference-card" }, [
+        createElement("img", { src: preview.data_url, alt: label }),
+        createElement("figcaption", { text: label }),
+      ]),
+    );
+  }
+  container.append(grid);
+}
+
+function keepPanelInViewport(panel) {
+  panel.style.left = "";
+  panel.style.right = "0";
+  window.requestAnimationFrame(() => {
+    const rect = panel.getBoundingClientRect();
+    if (rect.left < 8) {
+      panel.style.left = "0";
+      panel.style.right = "auto";
+      return;
+    }
+    if (rect.right > window.innerWidth - 8) {
+      panel.style.left = "auto";
+      panel.style.right = "0";
+    }
+  });
+}
+
 function buildPanel() {
   const root = createElement("div", { id: ROOT_ID });
+  loadSavedPosition(root);
+  const dragHandle = createElement("span", {
+    class: "filexa2comfyui-drag-handle",
+    text: "::",
+    title: "Drag Filexa panel",
+  });
   const toggle = createElement("button", {
     class: "filexa2comfyui-button",
-    text: "Filexa",
     title: "Open Filexa2ComfyUI",
-  });
+  }, [
+    dragHandle,
+    createElement("img", { class: "filexa2comfyui-icon", src: ICON_URL, alt: "" }),
+    createElement("span", { text: "Filexa" }),
+  ]);
   const panel = createElement("div", { class: "filexa2comfyui-panel filexa2comfyui-hidden" });
+  installDrag(root, dragHandle);
 
   const dot = createElement("span", { class: "filexa2comfyui-dot" });
   const statusLabel = createElement("span", { text: "CONFIGURE" });
@@ -154,9 +321,16 @@ function buildPanel() {
   compress.checked = true;
   const localOnly = createElement("input", { type: "checkbox" });
 
-  const imageSummary = createElement("div", { class: "filexa2comfyui-muted" });
-  const videoSummary = createElement("div", { class: "filexa2comfyui-muted" });
+  const snapshotSummaries = Object.fromEntries(
+    SNAPSHOT_TARGETS.map((target) => [target.id, createElement("div", { class: "filexa2comfyui-muted" })]),
+  );
+  const snapshotDots = Object.fromEntries(
+    SNAPSHOT_TARGETS.map((target) => [target.id, createElement("span", { class: "filexa2comfyui-snapshot-dot empty" })]),
+  );
   const statusBox = createElement("div", { class: "filexa2comfyui-status" });
+  const referencePreviewBox = createElement("section", {
+    class: "filexa2comfyui-grid filexa2comfyui-reference-preview filexa2comfyui-hidden",
+  });
   const diagnostics = createElement("ul", { class: "filexa2comfyui-diagnostics" });
 
   async function refresh() {
@@ -169,9 +343,13 @@ function buildPanel() {
     const cleanStatus = state.active_job_id ? "running" : (state.status || "configure");
     dot.className = `filexa2comfyui-dot ${cleanStatus}`;
     statusLabel.textContent = cleanStatus.toUpperCase();
-    imageSummary.textContent = snapshotText(state.snapshots?.image);
-    videoSummary.textContent = snapshotText(state.snapshots?.video);
+    for (const target of SNAPSHOT_TARGETS) {
+      const snapshot = state.snapshots?.[target.id];
+      snapshotSummaries[target.id].textContent = snapshotText(snapshot);
+      snapshotDots[target.id].className = `filexa2comfyui-snapshot-dot ${snapshotDotClass(snapshot)}`;
+    }
     statusBox.textContent = statusText(state);
+    renderReferencePreviews(referencePreviewBox, state.reference_previews);
     diagnostics.innerHTML = "";
     for (const item of state.diagnostics || []) {
       diagnostics.append(createElement("li", { text: item }));
@@ -272,34 +450,11 @@ function buildPanel() {
     ]),
     createElement("section", { class: "filexa2comfyui-grid" }, [
       createElement("h3", { text: "Snapshots" }),
-      createElement("div", { class: "filexa2comfyui-snapshot" }, [
-        createElement("strong", { text: "Image Workflow" }),
-        createElement("button", {
-          text: "Capture Current Workflow",
-          onclick: async () => {
-            try {
-              await capture("image");
-            } catch (error) {
-              alert(error.message || error);
-            }
-          },
-        }),
-        imageSummary,
+      createElement("div", { class: "filexa2comfyui-hint" }, [
+        document.createTextNode("Capture the exact workflow for each route. If a route is red, add the missing prompt or image input and capture it again."),
       ]),
-      createElement("div", { class: "filexa2comfyui-snapshot" }, [
-        createElement("strong", { text: "Video Workflow" }),
-        createElement("button", {
-          text: "Capture Current Workflow",
-          onclick: async () => {
-            try {
-              await capture("video");
-            } catch (error) {
-              alert(error.message || error);
-            }
-          },
-        }),
-        videoSummary,
-      ]),
+      createSnapshotGroup("Image", SNAPSHOT_TARGETS.filter((target) => target.group === "Image"), capture, snapshotSummaries, snapshotDots),
+      createSnapshotGroup("Video", SNAPSHOT_TARGETS.filter((target) => target.group === "Video"), capture, snapshotSummaries, snapshotDots),
     ]),
     createElement("section", { class: "filexa2comfyui-grid" }, [
       createElement("h3", { text: "Status" }),
@@ -315,6 +470,7 @@ function buildPanel() {
         },
       }),
     ]),
+    referencePreviewBox,
     createElement("section", { class: "filexa2comfyui-grid" }, [
       createElement("h3", { text: "Diagnostics" }),
       diagnostics,
@@ -324,6 +480,7 @@ function buildPanel() {
   toggle.addEventListener("click", async () => {
     panel.classList.toggle("filexa2comfyui-hidden");
     if (!panel.classList.contains("filexa2comfyui-hidden")) {
+      keepPanelInViewport(panel);
       try {
         await refresh();
       } catch (error) {

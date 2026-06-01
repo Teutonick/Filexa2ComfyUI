@@ -71,17 +71,22 @@ Validation expectations:
 
 ## Snapshot Modes
 
-The connector stores two snapshots in its local `data/` directory:
+The connector stores four snapshots in its local `data/` directory:
 
-- `image_snapshot.json`
-- `video_snapshot.json`
+- `t2i_snapshot.json`
+- `i2i_snapshot.json`
+- `t2v_snapshot.json`
+- `i2v_snapshot.json`
 
 Each snapshot contains the full ComfyUI API workflow, optional UI workflow metadata, saved date,
-node count, detected prompt binding, detected image-input binding, and model/workflow hint.
+node count, detected prompt binding, detected image-input binding, validation issues, and
+model/workflow hint.
 
-Image tasks use the image snapshot. Video tasks use the video snapshot. If a reference arrives, the
-connector uploads it through ComfyUI `/upload/image` and places the resulting input filename in the
-detected image-input binding.
+T2I/T2V tasks use text snapshots. I2I/I2V tasks use image-input snapshots. If a reference arrives,
+the connector uploads it through ComfyUI `/upload/image` and places the resulting input filename in
+the detected image-input binding. Missing prompt bindings, missing image bindings for I2I/I2V, and
+the last route-level execution failure are shown as red/invalid snapshots and fail with setup
+guidance instead of waiting for timeout.
 
 ## Advanced Task Overrides
 
@@ -145,7 +150,9 @@ The connector calls the configured ComfyUI URL:
 - `POST /interrupt` when cancellation is requested
 
 The connector discovers generated results by reading `/history/{prompt_id}` and scanning output
-items with a `filename`.
+items with a `filename`. If ComfyUI marks the prompt history as an execution error, or completes
+without a supported output, the plugin reports terminal task failure to Filexa immediately and shows
+a workflow/input hint in the panel instead of waiting for the bot-side timeout.
 
 ## Result Metadata
 

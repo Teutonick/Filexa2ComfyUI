@@ -50,12 +50,13 @@ Prebuilt binaries are not distributed in this repository.
 4. If your ComfyUI environment does not already include `requests`, install:
    `pip install -r ComfyUI/custom_nodes/Filexa2ComfyUI/requirements.txt`
 5. Restart ComfyUI.
-6. Open the ComfyUI web UI and click the `Filexa` button in the lower-right corner.
+6. Open the ComfyUI web UI and click the floating `Filexa` button. Drag it by the `::` handle if
+   it covers part of your workspace.
 7. Paste the Filexa API URL and token shown by the Telegram bot, then click `Connect / Save`.
-8. Open your image workflow and click `Capture Current Workflow` in `Image Workflow`.
-9. Open your video workflow and click `Capture Current Workflow` in `Video Workflow` if you want
-   local T2V/I2V.
-10. Keep ComfyUI running.
+8. Capture the exact workflows you want to use: `Text to Image (T2I)`, `Image to Image (I2I)`,
+   `Text to Video (T2V)`, and/or `Image to Video (I2V)`.
+   Use the matching `Capture Current Workflow` button after loading each workflow.
+9. Keep ComfyUI running.
 
 The connector stores configuration and snapshots in:
 
@@ -64,12 +65,17 @@ The connector stores configuration and snapshots in:
 The token is hidden after saving. Write it down if you plan to reuse it; otherwise create a new
 token from the Filexa bot when needed.
 
+The panel shows the live connector status, route readiness dots, diagnostics, and a small preview
+of the Filexa reference image while an I2I/I2V task is active.
+
 ## Snapshot Model
 
-Filexa2ComfyUI uses two saved API workflows:
+Filexa2ComfyUI uses four saved API workflows:
 
-- `data/image_snapshot.json`
-- `data/video_snapshot.json`
+- `data/t2i_snapshot.json`
+- `data/i2i_snapshot.json`
+- `data/t2v_snapshot.json`
+- `data/i2v_snapshot.json`
 
 Each snapshot contains:
 
@@ -79,37 +85,45 @@ Each snapshot contains:
 - node count;
 - detected prompt binding;
 - detected image-input binding;
+- validation issues shown in the panel;
 - a short model/workflow hint reported back to Filexa captions.
 
-Prompt detection prefers text-like inputs on `CLIPTextEncode`, prompt, text, or conditioning nodes.
+Prompt detection prefers prompt/text inputs on `CLIPTextEncode`, Qwen/prompt/text, encode, and
+conditioning nodes, and avoids filename, path, negative prompt, model, seed, and save-node fields.
 
 Reference detection looks for `LoadImage` or compatible image-input nodes and stores the first
-matching input. If no image-input node is found, the snapshot is treated as text-only.
+matching input. I2I and I2V snapshots are marked invalid until an image input is found.
 
-Capture can be repeated at any time. A new capture replaces the previous snapshot for that media
-kind.
+Capture can be repeated at any time. A new capture replaces the previous snapshot for that route.
+Green dots mean the route is ready, gray means it has not been captured, and red means Filexa cannot
+see a required prompt/image input or that this route was the last one to fail during execution.
 
 ## Task Behavior
 
-Image tasks use the Image Workflow snapshot:
+Image tasks use separate image snapshots:
 
 - `image` -> T2I, prompt injected into the detected prompt node;
 - `image_edit` -> I2I, prompt injected and first Filexa reference uploaded to ComfyUI, then placed
   into the detected image input.
 
-Video tasks use the Video Workflow snapshot:
+Video tasks use separate video snapshots:
 
 - `video` without references -> T2V;
 - `video` with one reference -> I2V, prompt injected and the reference placed into the detected
   image input.
 
 The workflow itself owns model selection, sampler settings, video nodes, dimensions, output format,
-and save nodes. After changing a workflow, capture it again.
+and save nodes. After changing a workflow, capture it again. If a route returns an old manual image,
+capture the matching route again and make sure the workflow has one clear prompt/text input that
+actually drives generation. Filexa prefers prompt nodes that lead to an output/save/preview branch,
+so decorative or disconnected prompt examples should not be selected. Complex workflows with helper
+text fields may still need a simpler prompt node or an explicit `params.prompt_binding` override
+from an advanced integration.
 
 ## Outputs
 
-The connector reads ComfyUI `/history/{prompt_id}`, finds the first generated media item, downloads
-it through `/view`, and sends it to Filexa.
+The connector reads ComfyUI `/history/{prompt_id}`, fails fast on ComfyUI execution errors, finds
+the first generated media item, downloads it through `/view`, and sends it to Filexa.
 
 Supported direct result types:
 
@@ -151,9 +165,11 @@ Check that the folder is exactly:
 
 Then restart ComfyUI and check the terminal for import errors.
 
-### Capture says the prompt node was not found.
+### A route is red or says the prompt input was not found.
 
-Make sure the workflow has an API-visible text prompt input, usually `CLIPTextEncode.text`.
+Make sure the workflow has an API-visible text prompt input that actually drives generation,
+usually `CLIPTextEncode.text`, a Qwen prompt input, or a simple text/prompt node connected to the
+generation path.
 
 ### I2I or I2V says no image input was found.
 
@@ -165,6 +181,12 @@ snapshot again.
 Open the Filexa2ComfyUI panel and check Status and Diagnostics. If the network is unstable, the
 connector will switch to chunk fallback for images. Oversized images/videos stay in the ComfyUI
 output folder and Filexa receives a local-only completion.
+
+### ComfyUI failed but Filexa kept waiting.
+
+Version 0.2.0 and newer read ComfyUI prompt history errors and report terminal failure plus an
+emergency cancel to Filexa. Check the panel Diagnostics for the original ComfyUI error and recapture
+the matching T2I/I2I/T2V/I2V route after fixing the workflow.
 
 ### Everything is stuck.
 

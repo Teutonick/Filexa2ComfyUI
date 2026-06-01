@@ -31,7 +31,7 @@ except Exception:  # pragma: no cover - normal outside ComfyUI/tests.
 
 
 CONNECTOR_NAME = "Filexa2ComfyUI Connector"
-CONNECTOR_VERSION = "0.1.1"
+CONNECTOR_VERSION = "0.2.1"
 CONNECTOR_PANEL_LABEL = "Filexa2ComfyUI"
 FILEXA_ENGINE = "comfyui"
 FILEXA_BOT_URL = "https://t.me/FilexaAIBot"
@@ -72,8 +72,34 @@ PROMPT_INPUT_NAMES = {
     "text",
     "prompt",
     "positive",
+    "positive_prompt",
+    "prompt_text",
+    "text_positive",
+    "user_prompt",
     "caption",
     "conditioning",
+    "string",
+    "value",
+}
+NON_PROMPT_INPUT_NAMES = {
+    "filename",
+    "filename_prefix",
+    "file",
+    "path",
+    "output_path",
+    "negative",
+    "negative_prompt",
+    "seed",
+    "steps",
+    "cfg",
+    "cfg_scale",
+    "width",
+    "height",
+    "model",
+    "model_name",
+    "ckpt_name",
+    "vae_name",
+    "image",
 }
 IMAGE_INPUT_NAMES = {
     "image",
@@ -90,6 +116,17 @@ MODEL_INPUT_NAMES = {
     "checkpoint",
     "lora_name",
     "vae_name",
+}
+SNAPSHOT_TARGETS = ("t2i", "i2i", "t2v", "i2v")
+SNAPSHOT_LEGACY_ALIASES = {
+    "image": "t2i",
+    "video": "t2v",
+}
+SNAPSHOT_LABELS = {
+    "t2i": "Text to Image",
+    "i2i": "Image to Image",
+    "t2v": "Text to Video",
+    "i2v": "Image to Video",
 }
 
 
@@ -117,6 +154,7 @@ class FilexaConfig:
     upload_mode_hint_until_utc: str = ""
     reference_download_mode_hint: str = ""
     reference_download_mode_hint_until_utc: str = ""
+    snapshot_failures: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -280,8 +318,14 @@ class Filexa2ComfyUIConnector:
         self.data_dir = self.root_path / "data"
         self._config_path = self.data_dir / "filexa2comfyui_config.json"
         self._snapshot_paths = {
-            "image": self.data_dir / "image_snapshot.json",
-            "video": self.data_dir / "video_snapshot.json",
+            "t2i": self.data_dir / "t2i_snapshot.json",
+            "i2i": self.data_dir / "i2i_snapshot.json",
+            "t2v": self.data_dir / "t2v_snapshot.json",
+            "i2v": self.data_dir / "i2v_snapshot.json",
+        }
+        self._legacy_snapshot_paths = {
+            "t2i": self.data_dir / "image_snapshot.json",
+            "t2v": self.data_dir / "video_snapshot.json",
         }
         self._config_lock = threading.RLock()
         self._config = self._load_config()
@@ -377,11 +421,34 @@ class Filexa2ComfyUIConnector:
             "last_duration_seconds": config.last_duration_seconds,
             "diagnostics": list(config.diagnostics or []),
             "network_notice": self._network_fallback_notice(),
-            "snapshots": {
-                "image": self.snapshot_summary("image"),
-                "video": self.snapshot_summary("video"),
-            },
+            "reference_previews": self._active_reference_previews(),
+            "snapshots": {target: self.snapshot_summary(target) for target in SNAPSHOT_TARGETS},
         }
+
+    def _active_reference_previews(self) -> list[dict[str, str]]:
+        runtime = self._active_runtime
+        if runtime is None or not runtime.reference_paths:
+            return []
+        previews: list[dict[str, str]] = []
+        for index, raw_path in enumerate(runtime.reference_paths[:MAX_REFERENCE_COUNT], start=1):
+            path = Path(raw_path)
+            try:
+                with Image.open(path) as image:
+                    image.thumbnail((180, 180))
+                    if image.mode not in {"RGB", "L"}:
+                        image = image.convert("RGB")
+                    buffer = BytesIO()
+                    image.save(buffer, format="JPEG", quality=82, optimize=True)
+                previews.append(
+                    {
+                        "label": f"reference {index}",
+                        "data_url": "data:image/jpeg;base64,"
+                        + base64.b64encode(buffer.getvalue()).decode("ascii"),
+                    }
+                )
+            except Exception as exc:
+                self._debug(f"Reference preview skipped path={path}: {exc}")
+        return previews
 
     def save_config_from_ui(self, body: dict[str, Any]) -> dict[str, Any]:
         api_url = str(body.get("api_url") or "").strip()
@@ -459,16 +526,17 @@ class Filexa2ComfyUIConnector:
             raise ValueError("Current ComfyUI API workflow is empty.")
         ui_workflow = body.get("ui_workflow") if isinstance(body.get("ui_workflow"), dict) else {}
         snapshot = _build_snapshot(target, api_workflow, ui_workflow)
-        if snapshot["bindings"].get("prompt") is None:
-            raise ValueError("Could not find a prompt text input in this workflow.")
         self._save_snapshot(target, snapshot)
+        issues = _snapshot_issues(target, snapshot)
+        issue_suffix = f" issues={'; '.join(issues)}" if issues else ""
         with self._config_lock:
             self._config.last_event = f"Captured {target} workflow snapshot"
             self._config.last_error = ""
+            self._config.snapshot_failures.pop(target, None)
             self._remember_diagnostic_locked(
                 f"Captured {target} snapshot: nodes={snapshot['node_count']} "
                 f"prompt={_binding_label(snapshot['bindings'].get('prompt'))} "
-                f"image={_binding_label(snapshot['bindings'].get('image'))}"
+                f"image={_binding_label(snapshot['bindings'].get('image'))}{issue_suffix}"
             )
             self._save_config_locked()
         return self.status_payload()
@@ -476,24 +544,40 @@ class Filexa2ComfyUIConnector:
     def snapshot_summary(self, target: str) -> dict[str, Any]:
         snapshot = self._load_snapshot(target)
         if not snapshot:
+            target = _snapshot_target(target)
+            last_failure = self._snapshot_failure(target)
             return {
                 "saved": False,
                 "target": target,
+                "label": SNAPSHOT_LABELS[target],
                 "saved_at_utc": "",
                 "node_count": 0,
                 "prompt_binding": None,
                 "image_binding": None,
                 "model_hint": "",
+                "valid": False,
+                "status": "failed" if last_failure else "empty",
+                "issues": [last_failure] if last_failure else [],
+                "last_failure": last_failure,
             }
         bindings = snapshot.get("bindings") if isinstance(snapshot.get("bindings"), dict) else {}
+        target = _snapshot_target(target)
+        issues = _snapshot_issues(target, snapshot)
+        last_failure = self._snapshot_failure(target)
+        all_issues = [*issues, *([last_failure] if last_failure else [])]
         return {
             "saved": True,
             "target": target,
+            "label": SNAPSHOT_LABELS[target],
             "saved_at_utc": str(snapshot.get("saved_at_utc") or ""),
             "node_count": int(snapshot.get("node_count") or 0),
             "prompt_binding": bindings.get("prompt"),
             "image_binding": bindings.get("image"),
             "model_hint": str(snapshot.get("model_hint") or ""),
+            "valid": not all_issues,
+            "status": "failed" if last_failure else "invalid" if issues else "ready",
+            "issues": all_issues,
+            "last_failure": last_failure,
         }
 
     def _worker_loop(self) -> None:
@@ -546,6 +630,7 @@ class Filexa2ComfyUIConnector:
 
     def _run_task(self, task: dict[str, Any], client: FilexaClient) -> None:
         self._validate_task(task, client)
+        snapshot_target = _snapshot_target_for_task(task)
         started_at = time.monotonic()
         temp_dir = Path(tempfile.mkdtemp(prefix="filexa2comfyui_"))
         runtime = TaskRuntime(task=task, temp_dir=temp_dir, started_at=started_at)
@@ -581,6 +666,7 @@ class Filexa2ComfyUIConnector:
                 return
             self._post_task_status_safe(client, task, "uploading result", 94)
             self._deliver_output_payload(client, task, payload, model_type=model_type)
+            self._clear_snapshot_failure(snapshot_target)
             self._finish_runtime("completed", f"Task complete: {payload.label or prompt_id}", started_at)
         except FilexaUnauthorizedError as exc:
             self._abort_active_task_after_filexa_failure(client, task, started_at, exc)
@@ -595,7 +681,10 @@ class Filexa2ComfyUIConnector:
                 return
             error = str(exc) or exc.__class__.__name__
             self._debug(f"Task failed: {traceback.format_exc()}")
-            self._report_failure_safe(client, task, error)
+            self._interrupt_comfy_safe()
+            self._post_task_status_safe(client, task, "ComfyUI task failed; notifying Filexa", 100)
+            self._report_task_failure_and_cancel_safe(client, task, error)
+            self._record_snapshot_failure(snapshot_target, error)
             self._finish_runtime("failed", f"Task failed: {_short_text(error, 300)}", started_at, error=error)
         finally:
             self._active_runtime = None
@@ -608,7 +697,7 @@ class Filexa2ComfyUIConnector:
         temp_dir: Path,
     ) -> dict[str, Any]:
         kind = str(task.get("kind") or "")
-        target = _snapshot_kind_for_task(kind)
+        target = _snapshot_target_for_task(task)
         params = task.get("params") if isinstance(task.get("params"), dict) else {}
         override = params.get("comfyui_workflow") if isinstance(params.get("comfyui_workflow"), dict) else None
         if override is not None:
@@ -618,8 +707,8 @@ class Filexa2ComfyUIConnector:
             snapshot = self._load_snapshot(target)
             if not snapshot:
                 raise RuntimeError(
-                    f"ComfyUI {target} workflow snapshot is missing. Open Filexa2ComfyUI, "
-                    f"load the workflow, and click Capture Current Workflow for {target}."
+                    f"ComfyUI {target.upper()} workflow snapshot is missing. Open Filexa2ComfyUI, "
+                    f"load the correct {SNAPSHOT_LABELS[target]} workflow, and capture it in the matching slot."
                 )
             workflow = _normalize_api_workflow(snapshot.get("api_workflow"))
         if not workflow:
@@ -629,18 +718,22 @@ class Filexa2ComfyUIConnector:
         if prompt_binding is None:
             prompt_binding = _detect_prompt_binding(workflow)
         if prompt_binding is None:
-            raise RuntimeError("ComfyUI workflow has no detected prompt text input.")
+            raise RuntimeError(
+                f"Saved {target.upper()} workflow has no prompt text input for Filexa. "
+                "Add an API-visible prompt field such as CLIPTextEncode.text or a prompt/text input "
+                "in your prompt node, then capture this workflow again."
+            )
         _set_node_input(workflow, prompt_binding, str(task.get("prompt") or ""))
 
         reference_paths = self._download_task_references(task, client, temp_dir)
         if reference_paths:
+            runtime = self._active_runtime
+            if runtime is not None:
+                runtime.reference_paths = [str(path) for path in reference_paths]
             uploaded_names = [
                 self._upload_comfy_image(path, _mime_from_magic(path.read_bytes()[:16]) or "image/jpeg")
                 for path in reference_paths
             ]
-            runtime = self._active_runtime
-            if runtime is not None:
-                runtime.reference_paths = [str(path) for path in reference_paths]
             reference_bindings = params.get("reference_bindings")
             if isinstance(reference_bindings, dict) and reference_bindings:
                 _apply_reference_bindings(workflow, reference_bindings, uploaded_names)
@@ -650,10 +743,13 @@ class Filexa2ComfyUIConnector:
                     image_binding = _detect_image_binding(workflow)
                 if image_binding is None:
                     raise RuntimeError(
-                        "This ComfyUI snapshot has no LoadImage/input-image node for Filexa references. "
-                        "Add a LoadImage node, connect it where the reference should go, and recapture the snapshot."
+                        f"Saved {target.upper()} workflow has no LoadImage/input-image node for Filexa references. "
+                        "Add a LoadImage node connected where the Filexa reference should go, then capture "
+                        "the I2I or I2V workflow again."
                     )
                 _set_node_input(workflow, image_binding, uploaded_names[0])
+        elif target in {"i2i", "i2v"}:
+            raise RuntimeError(f"Saved {target.upper()} workflow expects an image reference, but this task has none.")
         model_type = _short_text(str(snapshot.get("model_hint") or _detect_model_hint(workflow) or "ComfyUI workflow"), 50)
         return {
             "workflow": workflow,
@@ -814,9 +910,21 @@ class Filexa2ComfyUIConnector:
             )
             response.raise_for_status()
             payload = response.json() if response.content else {}
-            media = _first_history_media(payload, prompt_id, _snapshot_kind_for_task(str(task.get("kind") or "")))
+            history_error = _history_error_message(payload, prompt_id)
+            if history_error:
+                raise RuntimeError(
+                    "ComfyUI generation failed. Check that the saved workflow matches this Filexa task "
+                    f"and that all local files/nodes are available: {_short_text(history_error, 700)}"
+                )
+            media = _first_history_media(payload, prompt_id, _media_target_for_task(str(task.get("kind") or "")))
             if media is not None:
                 return self._download_comfy_media(base, media)
+            if _history_completed_without_outputs(payload, prompt_id):
+                raise RuntimeError(
+                    "ComfyUI finished but did not produce a supported output file. Add a SaveImage/video "
+                    "output node to the saved workflow, run it manually once, and capture the matching "
+                    "T2I/I2I/T2V/I2V workflow again."
+                )
             now = time.monotonic()
             if now - last_status_at >= 10:
                 last_status_at = now
@@ -853,7 +961,7 @@ class Filexa2ComfyUIConnector:
         model_type: str = "",
     ) -> None:
         if (
-            _snapshot_kind_for_task(str(task.get("kind") or "")) == "image"
+            _media_target_for_task(str(task.get("kind") or "")) == "image"
             and payload.mime_type in SUPPORTED_VIDEO_MIMES
         ):
             self._post_task_status_safe(client, task, "video kept in ComfyUI", 100)
@@ -1137,6 +1245,12 @@ class Filexa2ComfyUIConnector:
         except Exception as exc:
             self._debug(f"Cancel report skipped: {exc}")
 
+    def _report_task_failure_and_cancel_safe(self, client: FilexaClient, task: dict[str, Any], error: str) -> None:
+        clean = _short_text(error, 500)
+        self._debug(f"Terminal ComfyUI task failure; trying failure report and emergency cancel: {clean}")
+        self._report_failure_safe(client, task, clean)
+        self._report_cancel_safe(client, task, f"Canceled after ComfyUI task failure: {clean}")
+
     def _abort_active_task_after_filexa_failure(
         self,
         client: FilexaClient,
@@ -1281,6 +1395,13 @@ class Filexa2ComfyUIConnector:
         if not isinstance(config.diagnostics, list):
             config.diagnostics = []
         config.diagnostics = [_short_text(str(item), 400) for item in config.diagnostics[-8:]]
+        if not isinstance(config.snapshot_failures, dict):
+            config.snapshot_failures = {}
+        config.snapshot_failures = {
+            _snapshot_target(target): _short_text(str(error), 400)
+            for target, error in config.snapshot_failures.items()
+            if str(error or "").strip()
+        }
         if config.active_job_id:
             config.active_job_id = ""
             config.active_prompt_id = ""
@@ -1296,13 +1417,23 @@ class Filexa2ComfyUIConnector:
         )
 
     def _load_snapshot(self, target: str) -> dict[str, Any]:
-        path = self._snapshot_paths.get(_snapshot_target(target))
+        clean_target = _snapshot_target(target)
+        path = self._snapshot_paths.get(clean_target)
         if path is None:
             return {}
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except FileNotFoundError:
-            return {}
+            legacy = self._legacy_snapshot_paths.get(clean_target)
+            if legacy is None:
+                return {}
+            try:
+                payload = json.loads(legacy.read_text(encoding="utf-8"))
+            except FileNotFoundError:
+                return {}
+            except Exception as exc:
+                self._remember_diagnostic(f"Could not read legacy {target} snapshot: {exc}")
+                return {}
         except Exception as exc:
             self._remember_diagnostic(f"Could not read {target} snapshot: {exc}")
             return {}
@@ -1312,6 +1443,26 @@ class Filexa2ComfyUIConnector:
         path = self._snapshot_paths[_snapshot_target(target)]
         self.data_dir.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(snapshot, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    def _snapshot_failure(self, target: str) -> str:
+        with self._config_lock:
+            return str(self._config.snapshot_failures.get(_snapshot_target(target)) or "")
+
+    def _record_snapshot_failure(self, target: str, error: str) -> None:
+        clean_target = _snapshot_target(target)
+        clean_error = _short_text(error, 400)
+        with self._config_lock:
+            self._config.snapshot_failures[clean_target] = clean_error
+            self._remember_diagnostic_locked(f"{clean_target.upper()} workflow failed: {clean_error}")
+            self._save_config_locked()
+
+    def _clear_snapshot_failure(self, target: str) -> None:
+        clean_target = _snapshot_target(target)
+        with self._config_lock:
+            if clean_target not in self._config.snapshot_failures:
+                return
+            self._config.snapshot_failures.pop(clean_target, None)
+            self._save_config_locked()
 
     def _debug(self, message: str) -> None:
         with self._config_lock:
@@ -1372,7 +1523,7 @@ class Filexa2ComfyUIConnector:
 
 def _build_snapshot(target: str, api_workflow: dict[str, Any], ui_workflow: dict[str, Any]) -> dict[str, Any]:
     bindings = {
-        "prompt": _detect_prompt_binding(api_workflow),
+        "prompt": _detect_prompt_binding(api_workflow, ui_workflow),
         "image": _detect_image_binding(api_workflow),
     }
     return {
@@ -1385,6 +1536,28 @@ def _build_snapshot(target: str, api_workflow: dict[str, Any], ui_workflow: dict
         "bindings": bindings,
         "model_hint": _detect_model_hint(api_workflow),
     }
+
+
+def _snapshot_issues(target: str, snapshot: dict[str, Any]) -> list[str]:
+    target = _snapshot_target(target)
+    bindings = snapshot.get("bindings") if isinstance(snapshot.get("bindings"), dict) else {}
+    issues: list[str] = []
+    if _clean_binding(bindings.get("prompt")) is None:
+        issues.append(
+            "Prompt input was not detected. Filexa needs a visible prompt/text field, for example "
+            "CLIPTextEncode.text or a Qwen prompt node input."
+        )
+    if target in {"i2i", "i2v"} and _clean_binding(bindings.get("image")) is None:
+        issues.append(
+            "Image input was not detected. I2I/I2V workflows need a connected LoadImage or compatible "
+            "image input node for Filexa references."
+        )
+    if target in {"t2i", "t2v"} and _clean_binding(bindings.get("image")) is not None:
+        issues.append(
+            "This text workflow still contains an image loader. If generation repeats an old manual "
+            "result, capture a pure T2I/T2V workflow or use the matching I2I/I2V slot."
+        )
+    return issues
 
 
 def _normalize_api_workflow(value: Any) -> dict[str, Any]:
@@ -1401,33 +1574,189 @@ def _normalize_api_workflow(value: Any) -> dict[str, Any]:
     return nodes
 
 
-def _detect_prompt_binding(workflow: dict[str, Any]) -> dict[str, str] | None:
+def _detect_prompt_binding(workflow: dict[str, Any], ui_workflow: dict[str, Any] | None = None) -> dict[str, str] | None:
     candidates: list[tuple[int, int, str, str]] = []
+    titles = _ui_node_titles(ui_workflow)
+    downstream = _workflow_downstream_targets(workflow)
+    output_nodes = _workflow_output_node_ids(workflow)
     for order, node_id in enumerate(_sorted_node_ids(workflow)):
         node = workflow[node_id]
         class_type = str(node.get("class_type") or "").lower()
         if "loadimage" in class_type:
             continue
+        title = titles.get(node_id, "")
+        class_and_title = f"{class_type} {title}".lower()
         inputs = node.get("inputs") if isinstance(node.get("inputs"), dict) else {}
         for input_name, value in inputs.items():
-            if not isinstance(value, str):
-                continue
             clean_name = str(input_name).strip().lower()
+            if clean_name in NON_PROMPT_INPUT_NAMES or any(
+                bad in clean_name for bad in ("filename", "prefix", "path", "negative", "seed")
+            ):
+                continue
+            binding_input = str(input_name)
+            score_value = value
+            if not isinstance(value, str):
+                source_binding = _linked_prompt_source_binding(workflow, value)
+                if source_binding is None:
+                    continue
+                binding_input = source_binding["input"]
+                score_value = _node_input_value(workflow, source_binding)
             score = 0
+            if "negative" in str(score_value).strip().lower() and "positive" not in clean_name:
+                score -= 20
             if clean_name in PROMPT_INPUT_NAMES:
-                score += 20
+                score += 35
+            if "prompt" in clean_name:
+                score += 35
+            if clean_name == "text":
+                score += 10
             if "cliptextencode" in class_type:
+                score += 30
+            if "qwen" in class_type:
                 score += 15
-            if "prompt" in class_type or "text" in class_type or "conditioning" in class_type:
+            if "prompt" in class_and_title:
+                score += 28
+            if "positive" in class_and_title:
+                score += 18
+            if "text" in class_type or "conditioning" in class_type or "encode" in class_type:
                 score += 8
-            if clean_name in {"negative", "negative_prompt"}:
-                score -= 30
+            if "negative" in class_and_title:
+                score -= 50
+            if any(bad in class_type for bad in ("save", "preview", "note", "label", "filename")):
+                score -= 25
+            if output_nodes:
+                if _node_reaches_any_output(node_id, downstream, output_nodes):
+                    score += 45
+                elif downstream.get(node_id):
+                    score += 5
+                else:
+                    score -= 60
+            elif downstream.get(node_id):
+                score += 8
+            if isinstance(score_value, str) and len(score_value.strip()) >= 8:
+                score += 2
             if score > 0:
-                candidates.append((-score, order, node_id, str(input_name)))
+                binding_node_id = source_binding["node_id"] if not isinstance(value, str) else node_id
+                candidates.append((-score, order, binding_node_id, binding_input))
     if not candidates:
         return None
     _score, _order, node_id, input_name = sorted(candidates)[0]
     return {"node_id": node_id, "input": input_name}
+
+
+def _node_input_value(workflow: dict[str, Any], binding: dict[str, str]) -> Any:
+    node = workflow.get(str(binding.get("node_id") or ""))
+    inputs = node.get("inputs") if isinstance(node, dict) and isinstance(node.get("inputs"), dict) else {}
+    return inputs.get(str(binding.get("input") or ""))
+
+
+def _linked_prompt_source_binding(
+    workflow: dict[str, Any],
+    value: Any,
+    seen: set[str] | None = None,
+) -> dict[str, str] | None:
+    source_id = _linked_node_id(value)
+    if source_id is None:
+        return None
+    seen = seen or set()
+    if source_id in seen:
+        return None
+    seen.add(source_id)
+    node = workflow.get(source_id)
+    inputs = node.get("inputs") if isinstance(node, dict) and isinstance(node.get("inputs"), dict) else {}
+    string_bindings: list[tuple[int, str]] = []
+    linked_values: list[Any] = []
+    for input_name, input_value in inputs.items():
+        clean_name = str(input_name).strip().lower()
+        if clean_name in NON_PROMPT_INPUT_NAMES:
+            continue
+        if isinstance(input_value, str):
+            score = 0
+            if clean_name in PROMPT_INPUT_NAMES:
+                score += 20
+            if "prompt" in clean_name or "text" in clean_name:
+                score += 15
+            if clean_name in {"string", "value"}:
+                score += 8
+            if score > 0:
+                string_bindings.append((-score, str(input_name)))
+        elif _linked_node_id(input_value) is not None:
+            linked_values.append(input_value)
+    if string_bindings:
+        _score, input_name = sorted(string_bindings)[0]
+        return {"node_id": source_id, "input": input_name}
+    for linked_value in linked_values:
+        binding = _linked_prompt_source_binding(workflow, linked_value, seen)
+        if binding is not None:
+            return binding
+    return None
+
+
+def _linked_node_id(value: Any) -> str | None:
+    if isinstance(value, (list, tuple)) and value:
+        node_id = str(value[0] or "")
+        return node_id or None
+    return None
+
+
+def _workflow_downstream_targets(workflow: dict[str, Any]) -> dict[str, set[str]]:
+    downstream: dict[str, set[str]] = {}
+    for target_id, node in workflow.items():
+        inputs = node.get("inputs") if isinstance(node, dict) and isinstance(node.get("inputs"), dict) else {}
+        for value in inputs.values():
+            source_id = _linked_node_id(value)
+            if source_id is not None:
+                downstream.setdefault(source_id, set()).add(str(target_id))
+    return downstream
+
+
+def _workflow_output_node_ids(workflow: dict[str, Any]) -> set[str]:
+    result: set[str] = set()
+    for node_id, node in workflow.items():
+        class_type = str(node.get("class_type") or "").strip().lower()
+        compact = class_type.replace("_", "").replace(" ", "")
+        if any(marker in compact for marker in ("saveimage", "previewimage", "savevideo", "videocombine")):
+            result.add(str(node_id))
+        elif "save" in compact and any(media in compact for media in ("image", "video", "webp", "gif")):
+            result.add(str(node_id))
+    return result
+
+
+def _node_reaches_any_output(
+    node_id: str,
+    downstream: dict[str, set[str]],
+    output_nodes: set[str],
+) -> bool:
+    queue = [str(node_id)]
+    seen: set[str] = set()
+    while queue:
+        current = queue.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        if current in output_nodes:
+            return True
+        queue.extend(downstream.get(current, ()))
+    return False
+
+
+def _ui_node_titles(ui_workflow: dict[str, Any] | None) -> dict[str, str]:
+    if not isinstance(ui_workflow, dict):
+        return {}
+    nodes = ui_workflow.get("nodes")
+    if not isinstance(nodes, list):
+        return {}
+    titles: dict[str, str] = {}
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        node_id = str(node.get("id") or "")
+        if not node_id:
+            continue
+        title = str(node.get("title") or node.get("label") or "")
+        if title:
+            titles[node_id] = title
+    return titles
 
 
 def _detect_image_binding(workflow: dict[str, Any]) -> dict[str, str] | None:
@@ -1529,6 +1858,62 @@ def _first_history_media(payload: Any, prompt_id: str, target: str) -> dict[str,
     return sorted(found, key=lambda pair: pair[0])[0][1]
 
 
+def _history_error_message(payload: Any, prompt_id: str) -> str:
+    if not isinstance(payload, dict):
+        return ""
+    entry = payload.get(prompt_id) if isinstance(payload.get(prompt_id), dict) else payload
+    if not isinstance(entry, dict):
+        return ""
+    status = entry.get("status") if isinstance(entry.get("status"), dict) else {}
+    status_str = str(status.get("status_str") or status.get("status") or "").lower()
+    completed = bool(status.get("completed")) if "completed" in status else False
+    messages = status.get("messages") if isinstance(status.get("messages"), list) else []
+    details: list[str] = []
+    for item in messages:
+        event = ""
+        data: Any = None
+        if isinstance(item, (list, tuple)) and item:
+            event = str(item[0] or "")
+            data = item[1] if len(item) > 1 else None
+        elif isinstance(item, dict):
+            event = str(item.get("type") or item.get("event") or "")
+            data = item.get("data") if "data" in item else item
+        if "error" not in event.lower() and "exception" not in event.lower():
+            continue
+        details.append(_history_message_data_text(data))
+    if "error" in status_str or details:
+        detail = "; ".join(part for part in details if part)
+        return detail or status_str or "ComfyUI reported an execution error"
+    if completed and status_str in {"failed", "failure"}:
+        return status_str
+    return ""
+
+
+def _history_completed_without_outputs(payload: Any, prompt_id: str) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    entry = payload.get(prompt_id) if isinstance(payload.get(prompt_id), dict) else payload
+    if not isinstance(entry, dict):
+        return False
+    status = entry.get("status") if isinstance(entry.get("status"), dict) else {}
+    if status and bool(status.get("completed")):
+        return True
+    return bool(entry.get("outputs") == {})
+
+
+def _history_message_data_text(data: Any) -> str:
+    if not isinstance(data, dict):
+        return _short_text(str(data or ""), 500)
+    parts: list[str] = []
+    for key in ("exception_message", "message", "error", "node_type", "node_id"):
+        value = data.get(key)
+        if value:
+            parts.append(f"{key}={value}")
+    if not parts and data:
+        parts.append(json.dumps(data, ensure_ascii=False)[:500])
+    return _short_text("; ".join(parts), 500)
+
+
 def _walk_media_items(value: Any, key: str = ""):
     if isinstance(value, dict):
         if isinstance(value.get("filename"), str):
@@ -1617,10 +2002,27 @@ async def _request_json(request) -> dict[str, Any]:
 
 
 def _snapshot_target(value: Any) -> str:
-    return "video" if str(value or "").strip().lower() == "video" else "image"
+    raw = str(value or "").strip().lower()
+    raw = raw.replace("-", "_").replace(" ", "_")
+    if raw in SNAPSHOT_LEGACY_ALIASES:
+        return SNAPSHOT_LEGACY_ALIASES[raw]
+    if raw in SNAPSHOT_TARGETS:
+        return raw
+    return "t2i"
 
 
-def _snapshot_kind_for_task(kind: str) -> str:
+def _snapshot_target_for_task(task: dict[str, Any]) -> str:
+    kind = str(task.get("kind") or "")
+    references = task.get("references") if isinstance(task.get("references"), list) else []
+    has_reference = bool(references)
+    if kind == "video":
+        return "i2v" if has_reference else "t2v"
+    if kind == "image_edit" or has_reference:
+        return "i2i"
+    return "t2i"
+
+
+def _media_target_for_task(kind: str) -> str:
     return "video" if str(kind or "") == "video" else "image"
 
 

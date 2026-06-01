@@ -1,8 +1,14 @@
-.filexa2comfyui-button {
+#filexa2comfyui-root {
   position: fixed;
   right: 18px;
   bottom: 18px;
   z-index: 1200;
+}
+
+.filexa2comfyui-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   border: 1px solid var(--border-color, #4b5563);
   background: var(--comfy-menu-bg, #202124);
   color: var(--fg-color, #f8fafc);
@@ -13,14 +19,38 @@
   cursor: pointer;
 }
 
+.filexa2comfyui-dragging {
+  user-select: none;
+}
+
+.filexa2comfyui-drag-handle {
+  color: var(--descrip-text, #cbd5e1);
+  cursor: grab;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  letter-spacing: 0;
+  line-height: 1;
+  padding: 3px 2px;
+  touch-action: none;
+}
+
+.filexa2comfyui-dragging .filexa2comfyui-drag-handle {
+  cursor: grabbing;
+}
+
+.filexa2comfyui-icon {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+
 .filexa2comfyui-panel {
-  position: fixed;
-  right: 18px;
-  bottom: 64px;
+  position: absolute;
+  right: 0;
+  bottom: 46px;
   width: min(520px, calc(100vw - 36px));
   max-height: min(760px, calc(100vh - 96px));
   overflow: auto;
-  z-index: 1200;
   border: 1px solid var(--border-color, #4b5563);
   border-radius: 8px;
   background: var(--comfy-menu-bg, #202124);
@@ -148,8 +178,51 @@
   border-radius: 8px;
 }
 
+.filexa2comfyui-snapshot-group {
+  display: grid;
+  gap: 8px;
+}
+
+.filexa2comfyui-snapshot-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.filexa2comfyui-snapshot-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 700;
+}
+
+.filexa2comfyui-snapshot-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: #64748b;
+  flex: 0 0 auto;
+}
+
+.filexa2comfyui-snapshot-dot.ready {
+  background: #16a34a;
+}
+
+.filexa2comfyui-snapshot-dot.invalid {
+  background: #dc2626;
+}
+
+.filexa2comfyui-hint {
+  color: var(--descrip-text, #cbd5e1);
+  background: rgba(15, 23, 42, 0.4);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 8px;
+  padding: 8px 9px;
+}
+
 .filexa2comfyui-muted {
   color: var(--descrip-text, #cbd5e1);
+  white-space: pre-wrap;
 }
 
 .filexa2comfyui-status {
@@ -160,7 +233,46 @@
   padding: 9px;
 }
 
+.filexa2comfyui-reference-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.filexa2comfyui-reference-card {
+  margin: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.filexa2comfyui-reference-card img {
+  width: 100%;
+  max-height: 130px;
+  object-fit: contain;
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.filexa2comfyui-reference-card figcaption {
+  color: var(--descrip-text, #cbd5e1);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .filexa2comfyui-diagnostics {
   margin: 0;
   padding-left: 18px;
+}
+
+@media (max-width: 560px) {
+  .filexa2comfyui-snapshot-row {
+    grid-template-columns: 1fr;
+  }
+
+  .filexa2comfyui-reference-grid {
+    grid-template-columns: 1fr;
+  }
 }
