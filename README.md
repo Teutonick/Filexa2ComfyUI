@@ -40,15 +40,15 @@ Prebuilt binaries are not distributed in this repository.
 
    ```powershell
    cd ComfyUI\custom_nodes
-   git clone https://github.com/Teutonick/Filexa2ComfyUI
+   git clone https://github.com/Teutonick/Filexa2ComfyUI ComfyUI-Filexa2ComfyUI
    ```
 
    Manual copy from this Filexa repository is also possible for development:
 
-   `external_soft/comfyui` -> `ComfyUI/custom_nodes/Filexa2ComfyUI`
+   `external_soft/comfyui` -> `ComfyUI/custom_nodes/ComfyUI-Filexa2ComfyUI`
 
 4. If your ComfyUI environment does not already include `requests`, install:
-   `pip install -r ComfyUI/custom_nodes/Filexa2ComfyUI/requirements.txt`
+   `pip install -r ComfyUI/custom_nodes/ComfyUI-Filexa2ComfyUI/requirements.txt`
 5. Restart ComfyUI.
 6. Open the ComfyUI web UI and click the floating `Filexa` button. Drag it by the `::` handle if
    it covers part of your workspace.
@@ -60,13 +60,18 @@ Prebuilt binaries are not distributed in this repository.
 
 The connector stores configuration and snapshots in:
 
-`ComfyUI/custom_nodes/Filexa2ComfyUI/data/`
+`ComfyUI/custom_nodes/ComfyUI-Filexa2ComfyUI/data/`
 
 The token is hidden after saving. Write it down if you plan to reuse it; otherwise create a new
 token from the Filexa bot when needed.
 
 The panel shows the live connector status, route readiness dots, diagnostics, and a small preview
 of the Filexa reference image while an I2I/I2V task is active.
+
+On startup the panel checks the public GitHub `plugin_info.json`. If a newer version is available,
+an update marker and `Update` button appear next to the version. The built-in updater works for Git
+installations by running `git pull --ff-only` in the custom node folder; restart ComfyUI after it
+downloads an update.
 
 ## Snapshot Model
 
@@ -161,7 +166,7 @@ first Filexa reference.
 
 Check that the folder is exactly:
 
-`ComfyUI/custom_nodes/Filexa2ComfyUI`
+`ComfyUI/custom_nodes/ComfyUI-Filexa2ComfyUI`
 
 Then restart ComfyUI and check the terminal for import errors.
 

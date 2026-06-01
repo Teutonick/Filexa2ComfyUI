@@ -272,6 +272,23 @@ function renderReferencePreviews(container, previews) {
   container.append(grid);
 }
 
+function updateStatusText(update) {
+  const status = update?.status || "idle";
+  const latest = update?.latest_version ? `latest ${update.latest_version}` : "";
+  const message = update?.message || "";
+  return [status, latest, message].filter(Boolean).join(" · ");
+}
+
+async function applyPluginUpdate() {
+  const ok = window.confirm(
+    "Run git pull --ff-only inside this Filexa2ComfyUI custom node folder? Restart ComfyUI after a successful update.",
+  );
+  if (!ok) {
+    return null;
+  }
+  return request("/filexa2comfyui/update", { method: "POST", body: "{}" });
+}
+
 function keepPanelInViewport(panel) {
   panel.style.left = "";
   panel.style.right = "0";
@@ -311,6 +328,39 @@ function buildPanel() {
   const dot = createElement("span", { class: "filexa2comfyui-dot" });
   const statusLabel = createElement("span", { text: "CONFIGURE" });
   const closeButton = createElement("button", { text: "Close", onclick: () => panel.classList.add("filexa2comfyui-hidden") });
+  const versionLabel = createElement("span", { class: "filexa2comfyui-version", text: "v-" });
+  const updateWarning = createElement("button", {
+    class: "filexa2comfyui-update-warning filexa2comfyui-hidden",
+    text: "!",
+    title: "Update available",
+    onclick: async () => {
+      try {
+        const state = await applyPluginUpdate();
+        if (state?.update?.message) {
+          alert(state.update.message);
+        }
+        await refresh();
+      } catch (error) {
+        alert(error.message || error);
+      }
+    },
+  });
+  const updateStatus = createElement("span", { class: "filexa2comfyui-update-status" });
+  const updateButton = createElement("button", {
+    class: "primary filexa2comfyui-hidden",
+    text: "Update",
+    onclick: async () => {
+      try {
+        const state = await applyPluginUpdate();
+        if (state?.update?.message) {
+          alert(state.update.message);
+        }
+        await refresh();
+      } catch (error) {
+        alert(error.message || error);
+      }
+    },
+  });
 
   const apiUrl = createElement("input", { type: "url", placeholder: "https://your-filexa-api.example" });
   const token = createElement("input", { type: "password", placeholder: "flx_comfyui_..." });
@@ -343,6 +393,17 @@ function buildPanel() {
     const cleanStatus = state.active_job_id ? "running" : (state.status || "configure");
     dot.className = `filexa2comfyui-dot ${cleanStatus}`;
     statusLabel.textContent = cleanStatus.toUpperCase();
+    versionLabel.textContent = `v${state.version || "-"}`;
+    const update = state.update || {};
+    updateStatus.textContent = updateStatusText(update);
+    updateWarning.title = update.message || "Update available";
+    if (update.update_available) {
+      updateWarning.classList.remove("filexa2comfyui-hidden");
+      updateButton.classList.remove("filexa2comfyui-hidden");
+    } else {
+      updateWarning.classList.add("filexa2comfyui-hidden");
+      updateButton.classList.add("filexa2comfyui-hidden");
+    }
     for (const target of SNAPSHOT_TARGETS) {
       const snapshot = state.snapshots?.[target.id];
       snapshotSummaries[target.id].textContent = snapshotText(snapshot);
@@ -425,9 +486,14 @@ function buildPanel() {
     createElement("header", {}, [
       createElement("div", {}, [
         createElement("h2", { text: "Filexa2ComfyUI" }),
+        createElement("div", { class: "filexa2comfyui-version-row" }, [
+          versionLabel,
+          updateWarning,
+          updateStatus,
+        ]),
         createElement("div", { class: "filexa2comfyui-pill" }, [dot, statusLabel]),
       ]),
-      closeButton,
+      createElement("div", { class: "filexa2comfyui-header-actions" }, [updateButton, closeButton]),
     ]),
     createElement("section", { class: "filexa2comfyui-grid" }, [
       createElement("h3", { text: "Connection" }),

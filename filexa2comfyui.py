@@ -7,6 +7,7 @@ import math
 import mimetypes
 import re
 import shutil
+import subprocess
 import tempfile
 import threading
 import time
@@ -31,11 +32,12 @@ except Exception:  # pragma: no cover - normal outside ComfyUI/tests.
 
 
 CONNECTOR_NAME = "Filexa2ComfyUI Connector"
-CONNECTOR_VERSION = "0.2.1"
+CONNECTOR_VERSION = "0.2.2"
 CONNECTOR_PANEL_LABEL = "Filexa2ComfyUI"
 FILEXA_ENGINE = "comfyui"
 FILEXA_BOT_URL = "https://t.me/FilexaAIBot"
 PLUGIN_REPO_URL = "https://github.com/Teutonick/Filexa2ComfyUI"
+PLUGIN_INFO_URL = "https://raw.githubusercontent.com/Teutonick/Filexa2ComfyUI/main/plugin_info.json"
 POLL_DELAY_SECONDS = 10
 COMFY_POLL_SECONDS = 2
 MAX_PROMPT_CHARS = 8000
@@ -56,6 +58,8 @@ REFERENCE_TEXT_ATTEMPTS = 3
 COMFY_JSON_TIMEOUT = 20
 COMFY_UPLOAD_TIMEOUT = 30
 COMFY_RESULT_TIMEOUT = 60
+UPDATE_CHECK_TIMEOUT = 6
+UPDATE_APPLY_TIMEOUT = 120
 JSON_CHUNK_FAST_DELAY = 0.5
 JSON_CHUNK_SAFE_DELAY = 0.75
 UPLOAD_MODE_HINT_TTL_SECONDS = 6 * 60 * 60
@@ -336,6 +340,18 @@ class Filexa2ComfyUIConnector:
         self._live_status = "idle"
         self._live_progress: int | None = None
         self._routes_registered = False
+        self._update_lock = threading.RLock()
+        self._update_thread: threading.Thread | None = None
+        self._update_info: dict[str, Any] = {
+            "status": "idle",
+            "current_version": CONNECTOR_VERSION,
+            "latest_version": "",
+            "update_available": False,
+            "checked_at_utc": "",
+            "message": "",
+            "repo_url": PLUGIN_REPO_URL,
+            "restart_required": False,
+        }
 
     def register_routes(self) -> bool:
         if self._routes_registered:
@@ -375,8 +391,18 @@ class Filexa2ComfyUIConnector:
                 raise web.HTTPBadRequest(text=str(exc)) from exc
             return web.json_response(payload)
 
+        @routes.post("/filexa2comfyui/update-check")
+        async def update_check_route(_request):
+            self.check_for_updates_async(force=True)
+            return web.json_response(self.status_payload())
+
+        @routes.post("/filexa2comfyui/update")
+        async def update_route(_request):
+            return web.json_response(self.update_from_ui())
+
         self._routes_registered = True
         self._remember_diagnostic("ComfyUI web routes registered.")
+        self.check_for_updates_async()
         return True
 
     def ensure_worker(self) -> None:
@@ -422,8 +448,134 @@ class Filexa2ComfyUIConnector:
             "diagnostics": list(config.diagnostics or []),
             "network_notice": self._network_fallback_notice(),
             "reference_previews": self._active_reference_previews(),
+            "update": self._update_payload(),
             "snapshots": {target: self.snapshot_summary(target) for target in SNAPSHOT_TARGETS},
         }
+
+    def _update_payload(self) -> dict[str, Any]:
+        with self._update_lock:
+            payload = dict(self._update_info)
+        payload["current_version"] = CONNECTOR_VERSION
+        payload["repo_url"] = PLUGIN_REPO_URL
+        return payload
+
+    def check_for_updates_async(self, *, force: bool = False) -> None:
+        if not force and self._update_thread is not None and self._update_thread.is_alive():
+            return
+        self._update_thread = threading.Thread(
+            target=self._check_for_updates,
+            kwargs={"force": force},
+            name="filexa2comfyui-update-check",
+            daemon=True,
+        )
+        self._update_thread.start()
+
+    def _check_for_updates(self, *, force: bool = False) -> None:
+        del force
+        with self._update_lock:
+            if self._update_info.get("status") == "updating":
+                return
+            self._update_info.update(
+                {
+                    "status": "checking",
+                    "message": "Checking GitHub for connector updates...",
+                    "current_version": CONNECTOR_VERSION,
+                }
+            )
+        try:
+            response = requests.get(
+                PLUGIN_INFO_URL,
+                timeout=UPDATE_CHECK_TIMEOUT,
+                headers={
+                    "User-Agent": f"{CONNECTOR_NAME}/{CONNECTOR_VERSION}",
+                    "Accept": "application/json",
+                    "Connection": "close",
+                },
+            )
+            response.raise_for_status()
+            payload = response.json()
+            latest_version = str(payload.get("version") or "").strip()
+            if not latest_version:
+                raise RuntimeError("GitHub plugin_info.json has no version field.")
+            update_available = _version_newer(latest_version, CONNECTOR_VERSION)
+            with self._update_lock:
+                self._update_info.update(
+                    {
+                        "status": "available" if update_available else "current",
+                        "latest_version": latest_version,
+                        "update_available": update_available,
+                        "checked_at_utc": _utc_now_iso(),
+                        "message": (
+                            f"Update available: {latest_version}"
+                            if update_available
+                            else "Connector is up to date."
+                        ),
+                        "restart_required": False,
+                    }
+                )
+        except Exception as exc:
+            with self._update_lock:
+                self._update_info.update(
+                    {
+                        "status": "error",
+                        "checked_at_utc": _utc_now_iso(),
+                        "message": f"Update check failed: {_short_text(str(exc) or exc.__class__.__name__, 180)}",
+                    }
+                )
+
+    def update_from_ui(self) -> dict[str, Any]:
+        with self._update_lock:
+            latest_version = str(self._update_info.get("latest_version") or "")
+            self._update_info.update(
+                {
+                    "status": "updating",
+                    "message": "Running git pull --ff-only...",
+                    "update_available": False,
+                }
+            )
+        try:
+            if not (self.root_path / ".git").exists():
+                raise RuntimeError(
+                    "This connector folder is not a Git checkout. Install it through Git or "
+                    "ComfyUI-Manager from the GitHub URL, then update again."
+                )
+            result = subprocess.run(
+                ["git", "-C", str(self.root_path), "pull", "--ff-only"],
+                capture_output=True,
+                text=True,
+                timeout=UPDATE_APPLY_TIMEOUT,
+                check=False,
+            )
+            output = "\n".join(part.strip() for part in (result.stdout, result.stderr) if part.strip())
+            if result.returncode != 0:
+                raise RuntimeError(output or f"git pull exited with {result.returncode}")
+            message = "Update downloaded. Restart ComfyUI to load the new connector version."
+            if latest_version:
+                message = f"Update downloaded ({latest_version}). Restart ComfyUI to load it."
+            with self._update_lock:
+                self._update_info.update(
+                    {
+                        "status": "updated",
+                        "message": message,
+                        "checked_at_utc": _utc_now_iso(),
+                        "update_available": False,
+                        "restart_required": True,
+                    }
+                )
+            self._remember_diagnostic(message)
+        except Exception as exc:
+            message = f"Update failed: {_short_text(str(exc) or exc.__class__.__name__, 240)}"
+            with self._update_lock:
+                self._update_info.update(
+                    {
+                        "status": "error",
+                        "message": message,
+                        "checked_at_utc": _utc_now_iso(),
+                        "update_available": bool(latest_version),
+                    }
+                )
+            self._remember_diagnostic(message)
+        return self.status_payload()
 
     def _active_reference_previews(self) -> list[dict[str, str]]:
         runtime = self._active_runtime
@@ -2144,6 +2296,15 @@ def _format_elapsed(started_at: str) -> str:
         return f"{int(seconds)}s"
     minutes, rest = divmod(int(seconds), 60)
     return f"{minutes}m {rest}s"
+
+
+def _version_newer(candidate: str, current: str) -> bool:
+    return _version_key(candidate) > _version_key(current)
+
+
+def _version_key(value: str) -> tuple[int, ...]:
+    parts = [int(item) for item in re.findall(r"\d+", str(value or ""))]
+    return tuple(parts or [0])
 
 
 CONNECTOR = Filexa2ComfyUIConnector()
