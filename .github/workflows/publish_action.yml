@@ -2,11 +2,6 @@ name: Publish to Comfy Registry
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - "pyproject.toml"
 
 jobs:
   publish-node:
@@ -15,6 +10,15 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v4
+
+      - name: Check registry token
+        env:
+          REGISTRY_ACCESS_TOKEN: ${{ secrets.REGISTRY_ACCESS_TOKEN }}
+        run: |
+          if [ -z "$REGISTRY_ACCESS_TOKEN" ]; then
+            echo "::error::Set the REGISTRY_ACCESS_TOKEN repository secret before publishing to Comfy Registry."
+            exit 1
+          fi
 
       - name: Publish custom node
         uses: Comfy-Org/publish-node-action@main

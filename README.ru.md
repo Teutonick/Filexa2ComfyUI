@@ -103,9 +103,10 @@ Registry node id: `filexa2comfyui`, а отображаемое имя: `Filexa2
 comfy node publish
 ```
 
-В комплекте есть GitHub Actions workflow, который может публиковать node автоматически при
-изменении `pyproject.toml` в `main`. Перед включением добавь publishing API key Comfy Registry в
-секрет репозитория с именем `REGISTRY_ACCESS_TOKEN`.
+В комплекте есть GitHub Actions workflow, но он запускается только вручную (`workflow_dispatch`),
+поэтому обычные push не пытаются публиковать node. Добавь publishing API key Comfy Registry в
+секрет репозитория с именем `REGISTRY_ACCESS_TOKEN`, затем запусти `Publish to Comfy Registry` на
+вкладке Actions, когда будешь готов к публикации.
 
 ## Снапшоты
 

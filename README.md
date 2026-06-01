@@ -103,9 +103,10 @@ Publishing is done from the repository root with:
 comfy node publish
 ```
 
-The included GitHub Actions workflow can publish the node automatically when `pyproject.toml`
-changes on `main`. Add the Comfy Registry publishing API key as a repository secret named
-`REGISTRY_ACCESS_TOKEN` before enabling that workflow.
+The included GitHub Actions workflow is manual-only (`workflow_dispatch`) so normal pushes do not
+try to publish the node. Add the Comfy Registry publishing API key as a repository secret named
+`REGISTRY_ACCESS_TOKEN`, then run `Publish to Comfy Registry` from the Actions tab when you are
+ready to publish.
 
 ## Snapshot Model
 
