@@ -1,7 +1,7 @@
 [project]
 name = "filexa2comfyui"
-version = "0.2.3"
-description = "Connects ComfyUI to Filexa local generation through saved image and video workflows."
+version = "0.2.4"
+description = "Run local ComfyUI T2I/I2I/T2V/I2V workflows from Telegram via @FilexaAIBot, using your PC resources for image and video generation."
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
@@ -20,6 +20,7 @@ dependencies = { file = ["requirements.txt"] }
 Repository = "https://github.com/Teutonick/Filexa2ComfyUI"
 Documentation = "https://github.com/Teutonick/Filexa2ComfyUI#readme"
 "Bug Tracker" = "https://github.com/Teutonick/Filexa2ComfyUI/issues"
+"Filexa Bot" = "https://t.me/FilexaAIBot"
 
 [tool.comfy]
 PublisherId = "teutonick"

@@ -1,8 +1,8 @@
 {
   "name": "Filexa2ComfyUI Connector",
   "author": "Filexa",
-  "version": "0.2.3",
-  "description": "Connects ComfyUI to Filexa local image/video generation through the Filexa local connector API.",
+  "version": "0.2.4",
+  "description": "Runs local ComfyUI T2I/I2I/T2V/I2V workflows from Telegram via @FilexaAIBot, using the user's PC resources for image and video generation. Bot: https://t.me/FilexaAIBot",
   "url": "https://github.com/Teutonick/Filexa2ComfyUI",
   "date": "2026-06-01",
   "comfyui_version": "",

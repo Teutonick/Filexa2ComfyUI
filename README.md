@@ -2,8 +2,9 @@
 
 # Filexa2ComfyUI Connector
 
-Connects ComfyUI to Filexa local generation so Telegram users can run T2I, I2I, T2V, and I2V jobs
-on this PC through saved ComfyUI workflows.
+Filexa2ComfyUI works with the Telegram bot @FilexaAIBot as a task-control interface for local
+ComfyUI T2I, I2I, T2V, and I2V workflows. Its goal is to let Telegram users generate images and
+videos through Filexa while using the local resources, models, and workflows on their own PC.
 
 Bot: https://t.me/FilexaAIBot
 
@@ -16,6 +17,7 @@ Not affiliated with, endorsed by, or sponsored by ComfyUI.
 - `API_CONTRACT.md` - bot-side API contract for compatible servers.
 - `README.md` - installation and usage guide.
 - `README.ru.md` - Russian installation and usage guide.
+- `CHANGELOG.md` - release notes.
 - `LICENSE` - source code license.
 - `NOTICE.md` - legal notices and disclaimers.
 - `SECURITY.md` - vulnerability reporting policy.
