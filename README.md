@@ -15,6 +15,15 @@ Bot: https://t.me/FilexaAIBot
 
 Not affiliated with, endorsed by, or sponsored by ComfyUI.
 
+## SETUP ONLY ONCE
+
+![Filexa2ComfyUI setup](docs/img/setups.gif)
+
+## CREATE ALL IN ONE WINDOW
+
+![Filexa2ComfyUI create](docs/img/create.gif)
+
+
 ## Layout
 
 - `__init__.py` and `filexa2comfyui.py` - ComfyUI custom node backend and Filexa worker.

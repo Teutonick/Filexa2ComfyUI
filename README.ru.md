@@ -16,6 +16,14 @@ Telegram возможность генерировать изображения 
 
 Не является частью ComfyUI, не аффилирован с ComfyUI и не одобрен проектом ComfyUI.
 
+## НАСТРОЙКА ОДИН РАЗ
+
+![Filexa2ComfyUI setup](docs/img/setups.gif)
+
+## СОЗДАВАЙ ВСЕ В ОДНОМ ОКНЕ
+
+![Filexa2ComfyUI create](docs/img/create.gif)
+
 ## Состав
 
 - `__init__.py` и `filexa2comfyui.py` - backend custom node и worker Filexa.
