@@ -1,6 +1,6 @@
 [project]
 name = "filexa2comfyui"
-version = "0.3.0"
+version = "0.3.1"
 description = "Run local ComfyUI T2I/I2I/T2V/I2V workflows from Telegram via @FilexaAIBot, using your PC resources for image and video generation."
 readme = "README.md"
 license = { text = "MIT License" }

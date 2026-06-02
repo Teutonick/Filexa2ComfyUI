@@ -2,15 +2,15 @@
 
 # Filexa2ComfyUI Connector
 
+**НАСТРОИЛ ОДИН РАЗ — РАБОТАЕТ ВСЕГДА:** сохрани нужные workflow один раз, а дальше запускай
+Filexa-задачи из Telegram без возвращения в ComfyUI.
+
 Filexa2ComfyUI работает в связке с Telegram-ботом @FilexaAIBot, который выступает интерфейсом
 управления локальными ComfyUI workflow для T2I, I2I, T2V и I2V. Цель плагина - дать пользователям
 Telegram возможность генерировать изображения и видео через Filexa, используя локальные ресурсы,
 модели и workflow своего компьютера.
 
 ![Filexa2ComfyUI I2I demo](docs/img/demo_i2i_comfy.gif)
-
-**Один раз настроил - всегда работает:** сохрани нужные workflow один раз, а дальше запускай
-Filexa-задачи из Telegram без возвращения в ComfyUI.
 
 Бот: https://t.me/FilexaAIBot
 

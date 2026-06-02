@@ -10,7 +10,7 @@ const SNAPSHOT_TARGETS = [
   { id: "t2v", label: "Text to Video", short: "T2V", group: "Video" },
   { id: "i2v", label: "Image to Video", short: "I2V", group: "Video" },
 ];
-const SNAPSHOT_VALUE_TAIL_LENGTH = 15;
+const SNAPSHOT_VALUE_TAIL_LENGTH = 30;
 
 function installStylesheet() {
   if (document.getElementById("filexa2comfyui-css")) {

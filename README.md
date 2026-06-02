@@ -2,14 +2,14 @@
 
 # Filexa2ComfyUI Connector
 
+**SET IT UP ONCE. IT JUST KEEPS WORKING:** capture your workflows one time, then run Filexa jobs
+from Telegram without returning to ComfyUI.
+
 Filexa2ComfyUI works with the Telegram bot @FilexaAIBot as a task-control interface for local
 ComfyUI T2I, I2I, T2V, and I2V workflows. Its goal is to let Telegram users generate images and
 videos through Filexa while using the local resources, models, and workflows on their own PC.
 
 ![Filexa2ComfyUI I2I demo](docs/img/demo_i2i_comfy.gif)
-
-**Set it up once. It just keeps working:** capture your workflows one time, then run Filexa jobs
-from Telegram without returning to ComfyUI.
 
 Bot: https://t.me/FilexaAIBot
 

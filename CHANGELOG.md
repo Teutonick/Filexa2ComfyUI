@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1 - 2026-06-02
+
+- Increased workflow snapshot value tails in the ComfyUI panel from 15 to 30 characters so long
+  model filenames remain recognizable.
+- Reduced workflow snapshot detail text by 1 px to fit dense route cards more comfortably.
+
 ## 0.3.0 - 2026-06-02
 
 Stable minor release for Comfy Registry and GitHub distribution.

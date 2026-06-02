@@ -280,6 +280,7 @@
   color: var(--descrip-text, #cbd5e1);
   min-width: 0;
   max-width: 100%;
+  font-size: 12px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   word-break: break-word;
