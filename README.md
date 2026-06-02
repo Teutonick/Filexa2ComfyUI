@@ -86,10 +86,16 @@ token from the Filexa bot when needed.
 The panel shows the live connector status, route readiness dots, diagnostics, and a small preview
 of the Filexa reference image while an I2I/I2V task is active.
 
-On startup the panel checks the public GitHub `plugin_info.json`. If a newer version is available,
-an update marker and `Update` button appear next to the version. The built-in updater works for Git
-installations by running `git pull --ff-only` in the custom node folder; restart ComfyUI after it
-downloads an update. It does not run `pip install` or install packages at runtime.
+During active generation the connector reads ComfyUI websocket progress events when available and
+sends live percentages back to Filexa. If the websocket is unavailable, Filexa keeps showing the
+last known stage percentage instead of dropping back to an empty waiting placeholder.
+
+Registry and ComfyUI-Manager installations are updated by ComfyUI/Manager, so the connector does
+not check GitHub on startup in non-Git folders. For manual Git installations, the panel checks the
+public GitHub `plugin_info.json`; if a newer version is available, an update marker and `Update`
+button appear next to the version. That built-in updater runs only `git pull --ff-only` in the
+custom node folder; restart ComfyUI after it downloads an update. It does not run `pip install` or
+install packages at runtime.
 
 ## Comfy Registry Metadata
 
@@ -170,7 +176,8 @@ from an advanced integration.
 ## Outputs
 
 The connector reads ComfyUI `/history/{prompt_id}`, fails fast on ComfyUI execution errors, finds
-the first generated media item, downloads it through `/view`, and sends it to Filexa.
+the first generated media item, downloads it through `/view`, and sends it to Filexa. While waiting
+for the result, it also listens to ComfyUI `/ws` progress messages for the queued prompt.
 
 Supported direct result types:
 

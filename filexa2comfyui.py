@@ -23,6 +23,11 @@ from urllib.parse import urlencode, urljoin, urlparse
 import requests
 from PIL import Image
 
+try:  # Optional but declared for Registry installs; keeps tests/imports graceful.
+    import websocket
+except Exception:  # pragma: no cover - optional dependency may be absent in dev tests.
+    websocket = None
+
 try:  # ComfyUI provides these at runtime.
     from aiohttp import web
     from server import PromptServer
@@ -32,7 +37,7 @@ except Exception:  # pragma: no cover - normal outside ComfyUI/tests.
 
 
 CONNECTOR_NAME = "Filexa2ComfyUI Connector"
-CONNECTOR_VERSION = "0.2.5"
+CONNECTOR_VERSION = "0.2.8"
 CONNECTOR_PANEL_LABEL = "Filexa2ComfyUI"
 FILEXA_ENGINE = "comfyui"
 FILEXA_BOT_URL = "https://t.me/FilexaAIBot"
@@ -58,6 +63,8 @@ REFERENCE_TEXT_ATTEMPTS = 3
 COMFY_JSON_TIMEOUT = 20
 COMFY_UPLOAD_TIMEOUT = 30
 COMFY_RESULT_TIMEOUT = 60
+COMFY_WS_CONNECT_TIMEOUT = 3
+COMFY_WS_READ_TIMEOUT = 0.1
 UPDATE_CHECK_TIMEOUT = 6
 UPDATE_APPLY_TIMEOUT = 120
 JSON_CHUNK_FAST_DELAY = 0.5
@@ -176,6 +183,19 @@ class TaskRuntime:
     cancel_event: threading.Event = field(default_factory=threading.Event)
     reference_paths: list[str] = field(default_factory=list)
     comfy_prompt_id: str = ""
+    comfy_client_id: str = ""
+
+
+@dataclass
+class ComfyProgressState:
+    total_nodes: int
+    completed_nodes: set[str] = field(default_factory=set)
+    current_node: str = ""
+    current_fraction: float = 0.0
+    last_progress: int = 15
+    last_sent_progress: int = -1
+    last_stage: str = ""
+    last_posted_at: float = 0.0
 
 
 class FilexaUnauthorizedError(RuntimeError):
@@ -343,7 +363,7 @@ class Filexa2ComfyUIConnector:
         self._update_lock = threading.RLock()
         self._update_thread: threading.Thread | None = None
         self._update_info: dict[str, Any] = {
-            "status": "idle",
+            "status": "idle" if self._is_git_checkout() else "managed",
             "current_version": CONNECTOR_VERSION,
             "latest_version": "",
             "update_available": False,
@@ -402,7 +422,10 @@ class Filexa2ComfyUIConnector:
 
         self._routes_registered = True
         self._remember_diagnostic("ComfyUI web routes registered.")
-        self.check_for_updates_async()
+        if self._is_git_checkout():
+            self.check_for_updates_async()
+        else:
+            self._set_registry_managed_update_state()
         return True
 
     def ensure_worker(self) -> None:
@@ -459,7 +482,26 @@ class Filexa2ComfyUIConnector:
         payload["repo_url"] = PLUGIN_REPO_URL
         return payload
 
+    def _is_git_checkout(self) -> bool:
+        return (self.root_path / ".git").exists()
+
+    def _set_registry_managed_update_state(self) -> None:
+        with self._update_lock:
+            self._update_info.update(
+                {
+                    "status": "managed",
+                    "latest_version": "",
+                    "update_available": False,
+                    "checked_at_utc": "",
+                    "message": "",
+                    "restart_required": False,
+                }
+            )
+
     def check_for_updates_async(self, *, force: bool = False) -> None:
+        if not self._is_git_checkout():
+            self._set_registry_managed_update_state()
+            return
         if not force and self._update_thread is not None and self._update_thread.is_alive():
             return
         self._update_thread = threading.Thread(
@@ -471,7 +513,6 @@ class Filexa2ComfyUIConnector:
         self._update_thread.start()
 
     def _check_for_updates(self, *, force: bool = False) -> None:
-        del force
         with self._update_lock:
             if self._update_info.get("status") == "updating":
                 return
@@ -517,9 +558,14 @@ class Filexa2ComfyUIConnector:
             with self._update_lock:
                 self._update_info.update(
                     {
-                        "status": "error",
+                        "status": "error" if force else "unavailable",
                         "checked_at_utc": _utc_now_iso(),
-                        "message": f"Update check failed: {_short_text(str(exc) or exc.__class__.__name__, 180)}",
+                        "message": (
+                            f"Update check failed: {_short_text(str(exc) or exc.__class__.__name__, 180)}"
+                            if force
+                            else ""
+                        ),
+                        "update_available": False,
                     }
                 )
 
@@ -534,7 +580,7 @@ class Filexa2ComfyUIConnector:
                 }
             )
         try:
-            if not (self.root_path / ".git").exists():
+            if not self._is_git_checkout():
                 raise RuntimeError(
                     "This connector folder is not a Git checkout. Install it through Git or "
                     "ComfyUI-Manager from the GitHub URL, then update again."
@@ -806,12 +852,13 @@ class Filexa2ComfyUIConnector:
             self._post_task_status_safe(client, task, "queueing ComfyUI workflow", 12)
             prompt_id = self._queue_comfy_workflow(prepared)
             runtime.comfy_prompt_id = prompt_id
+            runtime.comfy_client_id = str(prepared.get("client_id") or "")
             with self._config_lock:
                 self._config.active_prompt_id = prompt_id
                 self._config.last_event = f"Queued ComfyUI prompt {prompt_id}"
                 self._save_config_locked()
             self._post_task_status_safe(client, task, "generating in ComfyUI", 15)
-            payload = self._wait_for_comfy_result(prompt_id, task, client, runtime)
+            payload = self._wait_for_comfy_result(prompt_id, task, client, runtime, prepared)
             if runtime.cancel_event.is_set():
                 self._report_cancel_safe(client, task, "Canceled in Filexa2ComfyUI Connector")
                 self._finish_runtime("canceled", "Task canceled", started_at)
@@ -908,6 +955,7 @@ class Filexa2ComfyUIConnector:
             "ui_workflow": snapshot.get("ui_workflow") if isinstance(snapshot.get("ui_workflow"), dict) else {},
             "model_type": model_type,
             "target": target,
+            "progress_node_count": len(workflow),
         }
 
     def _download_task_references(
@@ -1022,8 +1070,10 @@ class Filexa2ComfyUIConnector:
     def _queue_comfy_workflow(self, prepared: dict[str, Any]) -> str:
         config = self._config_snapshot()
         base = _require_base_url(config.comfyui_url)
+        client_id = f"filexa2comfyui-{uuid.uuid4().hex}"
+        prepared["client_id"] = client_id
         body: dict[str, Any] = {
-            "client_id": f"filexa2comfyui-{uuid.uuid4().hex}",
+            "client_id": client_id,
             "prompt": prepared["workflow"],
         }
         ui_workflow = prepared.get("ui_workflow")
@@ -1043,6 +1093,7 @@ class Filexa2ComfyUIConnector:
         task: dict[str, Any],
         client: FilexaClient,
         runtime: TaskRuntime,
+        prepared: dict[str, Any],
     ) -> UploadPayload:
         config = self._config_snapshot()
         base = _require_base_url(config.comfyui_url)
@@ -1050,39 +1101,176 @@ class Filexa2ComfyUIConnector:
         if deadline.year <= 1900:
             deadline = datetime.now(timezone.utc) + timedelta(hours=1)
         last_status_at = 0.0
-        while not self._worker_stop.is_set():
-            if runtime.cancel_event.is_set():
-                self._interrupt_comfy_safe()
-                raise RuntimeError("Task canceled")
-            if datetime.now(timezone.utc) > deadline:
-                raise RuntimeError("ComfyUI task deadline expired")
-            response = requests.get(
-                _join_url(base, f"/history/{prompt_id}"),
-                timeout=COMFY_JSON_TIMEOUT,
-            )
-            response.raise_for_status()
-            payload = response.json() if response.content else {}
-            history_error = _history_error_message(payload, prompt_id)
-            if history_error:
-                raise RuntimeError(
-                    "ComfyUI generation failed. Check that the saved workflow matches this Filexa task "
-                    f"and that all local files/nodes are available: {_short_text(history_error, 700)}"
+        total_nodes = max(1, int(prepared.get("progress_node_count") or 1))
+        progress_state = ComfyProgressState(total_nodes=total_nodes)
+        ws = self._open_comfy_progress_socket(base, runtime.comfy_client_id)
+        try:
+            while not self._worker_stop.is_set():
+                if runtime.cancel_event.is_set():
+                    self._interrupt_comfy_safe()
+                    raise RuntimeError("Task canceled")
+                if datetime.now(timezone.utc) > deadline:
+                    raise RuntimeError("ComfyUI task deadline expired")
+                if ws is not None:
+                    ws = self._drain_comfy_progress_events(ws, prompt_id, progress_state, task, client)
+                response = requests.get(
+                    _join_url(base, f"/history/{prompt_id}"),
+                    timeout=COMFY_JSON_TIMEOUT,
                 )
-            media = _first_history_media(payload, prompt_id, _media_target_for_task(str(task.get("kind") or "")))
-            if media is not None:
-                return self._download_comfy_media(base, media)
-            if _history_completed_without_outputs(payload, prompt_id):
-                raise RuntimeError(
-                    "ComfyUI finished but did not produce a supported output file. Add a SaveImage/video "
-                    "output node to the saved workflow, run it manually once, and capture the matching "
-                    "T2I/I2I/T2V/I2V workflow again."
-                )
-            now = time.monotonic()
-            if now - last_status_at >= 10:
-                last_status_at = now
-                self._post_task_status_safe(client, task, "waiting for ComfyUI result", None)
-            time.sleep(COMFY_POLL_SECONDS)
+                response.raise_for_status()
+                payload = response.json() if response.content else {}
+                history_error = _history_error_message(payload, prompt_id)
+                if history_error:
+                    raise RuntimeError(
+                        "ComfyUI generation failed. Check that the saved workflow matches this Filexa task "
+                        f"and that all local files/nodes are available: {_short_text(history_error, 700)}"
+                    )
+                media = _first_history_media(payload, prompt_id, _media_target_for_task(str(task.get("kind") or "")))
+                if media is not None:
+                    return self._download_comfy_media(base, media)
+                if _history_completed_without_outputs(payload, prompt_id):
+                    raise RuntimeError(
+                        "ComfyUI finished but did not produce a supported output file. Add a SaveImage/video "
+                        "output node to the saved workflow, run it manually once, and capture the matching "
+                        "T2I/I2I/T2V/I2V workflow again."
+                    )
+                now = time.monotonic()
+                if now - last_status_at >= 10:
+                    last_status_at = now
+                    synthetic_progress = _synthetic_comfy_progress(runtime.started_at, progress_state.last_progress)
+                    progress_state.last_progress = max(progress_state.last_progress, synthetic_progress)
+                    self._post_task_status_safe(
+                        client,
+                        task,
+                        "waiting for ComfyUI result",
+                        progress_state.last_progress,
+                    )
+                time.sleep(COMFY_POLL_SECONDS)
+        finally:
+            if ws is not None:
+                try:
+                    ws.close()
+                except Exception:
+                    pass
         raise RuntimeError("Connector stopped while waiting for ComfyUI")
+
+    def _open_comfy_progress_socket(self, base: Any, client_id: str):
+        if websocket is None or not client_id:
+            return None
+        try:
+            ws = websocket.create_connection(
+                _websocket_url(base, client_id),
+                timeout=COMFY_WS_CONNECT_TIMEOUT,
+            )
+            ws.settimeout(COMFY_WS_READ_TIMEOUT)
+            return ws
+        except Exception as exc:
+            self._debug(f"ComfyUI websocket progress unavailable: {_short_text(str(exc), 180)}")
+            return None
+
+    def _drain_comfy_progress_events(
+        self,
+        ws: Any,
+        prompt_id: str,
+        state: ComfyProgressState,
+        task: dict[str, Any],
+        client: FilexaClient,
+    ):
+        for _ in range(50):
+            try:
+                raw = ws.recv()
+            except Exception as exc:
+                if _is_websocket_timeout(exc):
+                    break
+                self._debug(f"ComfyUI websocket progress stopped: {_short_text(str(exc), 180)}")
+                try:
+                    ws.close()
+                except Exception:
+                    pass
+                return None
+            if isinstance(raw, bytes):
+                continue
+            try:
+                event = json.loads(str(raw))
+            except Exception:
+                continue
+            if isinstance(event, dict):
+                self._handle_comfy_progress_event(event, prompt_id, state, task, client)
+        return ws
+
+    def _handle_comfy_progress_event(
+        self,
+        event: dict[str, Any],
+        prompt_id: str,
+        state: ComfyProgressState,
+        task: dict[str, Any],
+        client: FilexaClient,
+    ) -> None:
+        event_type = str(event.get("type") or "")
+        data = event.get("data") if isinstance(event.get("data"), dict) else {}
+        event_prompt_id = str(data.get("prompt_id") or "")
+        if event_prompt_id and event_prompt_id != prompt_id:
+            return
+        stage = "generating in ComfyUI"
+        if event_type == "execution_start":
+            self._maybe_post_comfy_progress(client, task, state, stage, 15)
+        elif event_type == "execution_cached":
+            nodes = data.get("nodes") if isinstance(data.get("nodes"), list) else []
+            for node_id in nodes:
+                state.completed_nodes.add(str(node_id))
+            self._maybe_post_comfy_progress(client, task, state, stage, _comfy_progress_percent(state))
+        elif event_type == "executing":
+            node = data.get("node")
+            if node is None:
+                self._maybe_post_comfy_progress(client, task, state, "finalizing ComfyUI result", 93)
+                return
+            node_id = str(node)
+            if state.current_node and state.current_node != node_id:
+                state.completed_nodes.add(state.current_node)
+            state.current_node = node_id
+            state.current_fraction = 0.0
+            self._maybe_post_comfy_progress(client, task, state, stage, _comfy_progress_percent(state))
+        elif event_type == "progress":
+            if data.get("node") is not None:
+                state.current_node = str(data.get("node"))
+            value = _float_or_none(data.get("value"))
+            maximum = _float_or_none(data.get("max"))
+            if value is not None and maximum and maximum > 0:
+                state.current_fraction = max(0.0, min(0.99, value / maximum))
+            self._maybe_post_comfy_progress(client, task, state, stage, _comfy_progress_percent(state))
+        elif event_type == "executed":
+            node = data.get("node")
+            if node is not None:
+                state.completed_nodes.add(str(node))
+                if state.current_node == str(node):
+                    state.current_node = ""
+                    state.current_fraction = 0.0
+            self._maybe_post_comfy_progress(client, task, state, stage, _comfy_progress_percent(state))
+
+    def _maybe_post_comfy_progress(
+        self,
+        client: FilexaClient,
+        task: dict[str, Any],
+        state: ComfyProgressState,
+        stage: str,
+        progress: int | None,
+    ) -> None:
+        clean_progress = _coerce_progress(progress)
+        if clean_progress is None:
+            clean_progress = state.last_progress
+        clean_progress = max(state.last_progress, clean_progress)
+        state.last_progress = min(93, clean_progress)
+        now = time.monotonic()
+        if stage == state.last_stage and state.last_progress == state.last_sent_progress and now - state.last_posted_at < 2:
+            return
+        if state.last_progress == state.last_sent_progress and now - state.last_posted_at < 5:
+            return
+        if now - state.last_posted_at < 1 and state.last_progress <= state.last_sent_progress:
+            return
+        state.last_stage = stage
+        state.last_sent_progress = state.last_progress
+        state.last_posted_at = now
+        self._post_task_status_safe(client, task, stage, state.last_progress)
 
     def _download_comfy_media(self, base: Any, media: dict[str, Any]) -> UploadPayload:
         query = urlencode(
@@ -1435,6 +1623,9 @@ class Filexa2ComfyUIConnector:
         path = str(task.get("status_url") or "")
         clean_status = _short_text(status, 120)
         clean_progress = _coerce_progress(progress)
+        if clean_progress is None:
+            _live_status, live_progress = self._live_progress_snapshot()
+            clean_progress = live_progress
         self._set_live_progress(clean_status, clean_progress)
         if not path:
             return
@@ -2194,6 +2385,11 @@ def _join_url(base: Any, path: str) -> str:
     return urljoin(f"{base.scheme}://{base.netloc}/", str(path or "").lstrip("/"))
 
 
+def _websocket_url(base: Any, client_id: str) -> str:
+    scheme = "wss" if str(base.scheme).lower() == "https" else "ws"
+    return f"{scheme}://{base.netloc}/ws?{urlencode({'clientId': client_id})}"
+
+
 def _same_origin(left: Any, right: Any) -> bool:
     return (
         left.scheme.lower() == right.scheme.lower()
@@ -2271,6 +2467,51 @@ def _coerce_progress(value: Any) -> int | None:
     except (TypeError, ValueError):
         return None
     return max(0, min(100, clean))
+
+
+def _float_or_none(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _comfy_progress_percent(state: ComfyProgressState) -> int:
+    total = max(1, int(state.total_nodes or 1))
+    completed = min(total, len(state.completed_nodes))
+    fraction = max(0.0, min(0.99, float(state.current_fraction or 0.0)))
+    raw = 15 + int(min(1.0, (completed + fraction) / total) * 78)
+    return max(state.last_progress, min(93, raw))
+
+
+def _synthetic_comfy_progress(started_at: float, last_progress: int) -> int:
+    elapsed = max(0.0, time.monotonic() - float(started_at or time.monotonic()))
+    anchors = (
+        (0.0, 15),
+        (30.0, 22),
+        (60.0, 35),
+        (120.0, 50),
+        (300.0, 75),
+        (600.0, 88),
+    )
+    target = anchors[-1][1]
+    for index in range(1, len(anchors)):
+        previous_seconds, previous_progress = anchors[index - 1]
+        next_seconds, next_progress = anchors[index]
+        if elapsed <= next_seconds:
+            span = max(1.0, next_seconds - previous_seconds)
+            ratio = (elapsed - previous_seconds) / span
+            target = int(previous_progress + (next_progress - previous_progress) * ratio)
+            break
+    return max(last_progress, min(88, target))
+
+
+def _is_websocket_timeout(exc: Exception) -> bool:
+    if websocket is not None:
+        timeout_type = getattr(websocket, "WebSocketTimeoutException", None)
+        if timeout_type is not None and isinstance(exc, timeout_type):
+            return True
+    return isinstance(exc, TimeoutError) or exc.__class__.__name__ == "WebSocketTimeoutException"
 
 
 def _utc_now_iso() -> str:

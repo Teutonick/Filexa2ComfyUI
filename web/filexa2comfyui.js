@@ -274,6 +274,9 @@ function renderReferencePreviews(container, previews) {
 
 function updateStatusText(update) {
   const status = update?.status || "idle";
+  if (["idle", "managed", "unavailable", "current"].includes(status) && !update?.update_available && !update?.restart_required) {
+    return "";
+  }
   const latest = update?.latest_version ? `latest ${update.latest_version}` : "";
   const message = update?.message || "";
   return [status, latest, message].filter(Boolean).join(" · ");

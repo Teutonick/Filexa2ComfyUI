@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.2.8 - 2026-06-02
+
+- Added synthetic ComfyUI generation progress fallback so Filexa percentages keep moving when `/ws` progress events are unavailable.
+- Added clearer local-connector setup guidance in Filexa settings, including a bold list of supported engines.
+- Expanded the post-consent welcome message with guest-chat and local-generation hints.
+- Increased local image and image-edit task timeout multiplier to `x2`; local video remains `x3`.
+
+## 0.2.7 - 2026-06-01
+
+- Added ComfyUI websocket progress tracking so Filexa receives live generation percentages when ComfyUI exposes `/ws` events.
+- Preserved the last known progress percentage during result polling instead of replacing it with an empty placeholder.
+- Added `websocket-client` as a runtime dependency for Registry and Manager installs.
+
+## 0.2.6 - 2026-06-01
+
+- Disabled automatic GitHub update checks for Comfy Registry and non-Git installations.
+- Kept GitHub update checks and `git pull --ff-only` updates only for real Git checkout installs.
+- Made automatic update-check network failures silent so the panel does not open with a scary error.
+
 ## 0.2.5 - 2026-06-01
 
 - Improved package description for Comfy Registry and GitHub, making the @FilexaAIBot Telegram workflow explicit.

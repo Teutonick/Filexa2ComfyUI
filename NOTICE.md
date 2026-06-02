@@ -57,9 +57,11 @@ The connector also calls the configured local ComfyUI HTTP URL to queue prompts,
 references, interrupt active work, read history, and download generated outputs. By default the web
 panel stores the browser's current ComfyUI origin.
 
-The connector checks the public GitHub `plugin_info.json` for update metadata at startup. If the
-user chooses the built-in update action, the connector runs `git pull --ff-only` in its own custom
-node directory. It does not run `pip install` or install Python packages at runtime.
+For manual Git checkout installations, the connector checks the public GitHub `plugin_info.json` for
+update metadata at startup. Registry and non-Git installations do not check GitHub on startup and
+are expected to update through ComfyUI/Manager. If the user chooses the built-in update action in a
+Git checkout, the connector runs `git pull --ff-only` in its own custom node directory. It does not
+run `pip install` or install Python packages at runtime.
 
 The connector does not give the developer remote desktop access, shell access, file-system access,
 or administrative access to the user's computer.
