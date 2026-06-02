@@ -6,6 +6,11 @@ Filexa2ComfyUI works with the Telegram bot @FilexaAIBot as a task-control interf
 ComfyUI T2I, I2I, T2V, and I2V workflows. Its goal is to let Telegram users generate images and
 videos through Filexa while using the local resources, models, and workflows on their own PC.
 
+![Filexa2ComfyUI I2I demo](docs/img/demo_i2i_comfy.gif)
+
+**Set it up once. It just keeps working:** capture your workflows one time, then run Filexa jobs
+from Telegram without returning to ComfyUI.
+
 Bot: https://t.me/FilexaAIBot
 
 Not affiliated with, endorsed by, or sponsored by ComfyUI.
@@ -58,15 +63,15 @@ Prebuilt binaries are not distributed in this repository.
 
    ```powershell
    cd ComfyUI\custom_nodes
-   git clone https://github.com/Teutonick/Filexa2ComfyUI ComfyUI-Filexa2ComfyUI
+   git clone https://github.com/Teutonick/Filexa2ComfyUI Filexa2ComfyUI
    ```
 
    Manual copy from this Filexa repository is also possible for development:
 
-   `external_soft/comfyui` -> `ComfyUI/custom_nodes/ComfyUI-Filexa2ComfyUI`
+   `external_soft/comfyui` -> `ComfyUI/custom_nodes/Filexa2ComfyUI`
 
 4. If your ComfyUI environment does not already include the declared dependencies, install:
-   `pip install -r ComfyUI/custom_nodes/ComfyUI-Filexa2ComfyUI/requirements.txt`
+   `pip install -r ComfyUI/custom_nodes/Filexa2ComfyUI/requirements.txt`
 5. Restart ComfyUI.
 6. Open the ComfyUI web UI and click the floating `Filexa` button. Drag it by the `::` handle if
    it covers part of your workspace.
@@ -78,7 +83,7 @@ Prebuilt binaries are not distributed in this repository.
 
 The connector stores configuration and snapshots in:
 
-`ComfyUI/custom_nodes/ComfyUI-Filexa2ComfyUI/data/`
+`ComfyUI/custom_nodes/Filexa2ComfyUI/data/`
 
 The token is hidden after saving. Write it down if you plan to reuse it; otherwise create a new
 token from the Filexa bot when needed.
@@ -99,8 +104,8 @@ install packages at runtime.
 
 ## Comfy Registry Metadata
 
-The Registry node id is `filexa2comfyui`, while the user-facing display name is `Filexa2ComfyUI`.
-The install folder may still be named `ComfyUI-Filexa2ComfyUI` for manual Git installs.
+The Registry node id is `filexa2comfyui`, while the user-facing display name and recommended
+custom node folder are `Filexa2ComfyUI`.
 
 Before publishing, make sure the `PublisherId` in `pyproject.toml` matches the publisher id created
 on Comfy Registry. The bundled value is `teutonick` to match the planned GitHub namespace.
@@ -215,7 +220,7 @@ first Filexa reference.
 
 Check that the folder is exactly:
 
-`ComfyUI/custom_nodes/ComfyUI-Filexa2ComfyUI`
+`ComfyUI/custom_nodes/Filexa2ComfyUI`
 
 Then restart ComfyUI and check the terminal for import errors.
 

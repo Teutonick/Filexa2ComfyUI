@@ -217,6 +217,10 @@
 .filexa2comfyui-snapshot {
   display: grid;
   gap: 7px;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
   padding: 9px;
   border: 1px solid rgba(148, 163, 184, 0.26);
   border-radius: 8px;
@@ -237,7 +241,15 @@
   display: flex;
   align-items: center;
   gap: 7px;
+  min-width: 0;
   font-weight: 700;
+}
+
+.filexa2comfyui-snapshot-title span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .filexa2comfyui-snapshot-dot {
@@ -266,7 +278,11 @@
 
 .filexa2comfyui-muted {
   color: var(--descrip-text, #cbd5e1);
+  min-width: 0;
+  max-width: 100%;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .filexa2comfyui-status {

@@ -1,6 +1,15 @@
 # Changelog
 
-## 0.2.9 - 2026-06-02
+## 0.3.0 - 2026-06-02
+
+Stable minor release for Comfy Registry and GitHub distribution.
+
+- Promoted Filexa2ComfyUI from the 0.2.x public release series to stable 0.3.0.
+- Added an inline I2I demo GIF to both English and Russian plugin READMEs.
+- Standardized manual Git and development install paths on `ComfyUI/custom_nodes/Filexa2ComfyUI`
+  to match the Registry package identity and remove legacy prefixed folder examples.
+
+## 0.2.8 - 2026-06-02
 
 - Added synthetic ComfyUI generation progress fallback so Filexa percentages keep moving when `/ws` progress events are unavailable.
 - Added clearer local-connector setup guidance in Filexa settings, including a bold list of supported engines.

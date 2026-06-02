@@ -10,6 +10,7 @@ const SNAPSHOT_TARGETS = [
   { id: "t2v", label: "Text to Video", short: "T2V", group: "Video" },
   { id: "i2v", label: "Image to Video", short: "I2V", group: "Video" },
 ];
+const SNAPSHOT_VALUE_TAIL_LENGTH = 15;
 
 function installStylesheet() {
   if (document.getElementById("filexa2comfyui-css")) {
@@ -91,23 +92,34 @@ function createElement(tag, attrs = {}, children = []) {
   return element;
 }
 
+function compactSnapshotValue(value) {
+  const text = String(value || "").trim();
+  if (!text) {
+    return "-";
+  }
+  if (text.length <= SNAPSHOT_VALUE_TAIL_LENGTH) {
+    return text;
+  }
+  return `...${text.slice(-SNAPSHOT_VALUE_TAIL_LENGTH)}`;
+}
+
 function snapshotText(snapshot) {
   if (!snapshot?.saved) {
     return "Workflow not captured";
   }
   const saved = snapshot.saved_at_utc ? new Date(snapshot.saved_at_utc).toLocaleString() : "-";
   const prompt = snapshot.prompt_binding
-    ? `${snapshot.prompt_binding.node_id}.${snapshot.prompt_binding.input}`
+    ? compactSnapshotValue(`${snapshot.prompt_binding.node_id}.${snapshot.prompt_binding.input}`)
     : "-";
   const image = snapshot.image_binding
-    ? `${snapshot.image_binding.node_id}.${snapshot.image_binding.input}`
+    ? compactSnapshotValue(`${snapshot.image_binding.node_id}.${snapshot.image_binding.input}`)
     : "text only";
   return [
     `Saved: ${saved}`,
     `Nodes: ${snapshot.node_count || 0}`,
     `Prompt: ${prompt}`,
     `Image input: ${image}`,
-    `Model: ${snapshot.model_hint || "-"}`,
+    `Model: ${compactSnapshotValue(snapshot.model_hint)}`,
     ...(snapshot.issues?.length ? [`Issue: ${snapshot.issues.join(" ")}`] : []),
   ].join("\n");
 }

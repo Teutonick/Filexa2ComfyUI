@@ -7,6 +7,11 @@ Filexa2ComfyUI работает в связке с Telegram-ботом @FilexaAI
 Telegram возможность генерировать изображения и видео через Filexa, используя локальные ресурсы,
 модели и workflow своего компьютера.
 
+![Filexa2ComfyUI I2I demo](docs/img/demo_i2i_comfy.gif)
+
+**Один раз настроил - всегда работает:** сохрани нужные workflow один раз, а дальше запускай
+Filexa-задачи из Telegram без возвращения в ComfyUI.
+
 Бот: https://t.me/FilexaAIBot
 
 Не является частью ComfyUI, не аффилирован с ComfyUI и не одобрен проектом ComfyUI.
@@ -59,15 +64,15 @@ Telegram возможность генерировать изображения 
 
    ```powershell
    cd ComfyUI\custom_nodes
-   git clone https://github.com/Teutonick/Filexa2ComfyUI ComfyUI-Filexa2ComfyUI
+   git clone https://github.com/Teutonick/Filexa2ComfyUI Filexa2ComfyUI
    ```
 
    Ручное копирование из этого репозитория Filexa тоже подходит для разработки:
 
-   `external_soft/comfyui` -> `ComfyUI/custom_nodes/ComfyUI-Filexa2ComfyUI`
+   `external_soft/comfyui` -> `ComfyUI/custom_nodes/Filexa2ComfyUI`
 
 4. Если в окружении ComfyUI нет объявленных зависимостей, установи:
-   `pip install -r ComfyUI/custom_nodes/ComfyUI-Filexa2ComfyUI/requirements.txt`
+   `pip install -r ComfyUI/custom_nodes/Filexa2ComfyUI/requirements.txt`
 5. Перезапусти ComfyUI.
 6. Открой web UI ComfyUI и нажми плавающую кнопку `Filexa`. Если она мешает рабочей области,
    перетащи ее за ручку `::`.
@@ -79,7 +84,7 @@ Telegram возможность генерировать изображения 
 
 Конфигурация и snapshots хранятся здесь:
 
-`ComfyUI/custom_nodes/ComfyUI-Filexa2ComfyUI/data/`
+`ComfyUI/custom_nodes/Filexa2ComfyUI/data/`
 
 После сохранения токен скрывается. Запиши его, если планируешь переиспользовать; иначе создай
 новый токен в боте Filexa.
@@ -100,8 +105,8 @@ GitHub `plugin_info.json`; если доступна версия новее, р
 
 ## Метаданные Comfy Registry
 
-Registry node id: `filexa2comfyui`, а отображаемое имя: `Filexa2ComfyUI`. Для ручной Git-установки
-папка по-прежнему может называться `ComfyUI-Filexa2ComfyUI`.
+Registry node id: `filexa2comfyui`, а отображаемое имя и рекомендуемая папка custom node:
+`Filexa2ComfyUI`.
 
 Перед публикацией проверь, что `PublisherId` в `pyproject.toml` совпадает с publisher id,
 созданным в Comfy Registry. Сейчас указано `teutonick` под планируемый GitHub namespace.
@@ -216,7 +221,7 @@ reference.
 
 Проверь, что папка лежит ровно здесь:
 
-`ComfyUI/custom_nodes/ComfyUI-Filexa2ComfyUI`
+`ComfyUI/custom_nodes/Filexa2ComfyUI`
 
 Затем перезапусти ComfyUI и посмотри terminal на import errors.
 

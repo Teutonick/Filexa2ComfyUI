@@ -37,7 +37,7 @@ except Exception:  # pragma: no cover - normal outside ComfyUI/tests.
 
 
 CONNECTOR_NAME = "Filexa2ComfyUI Connector"
-CONNECTOR_VERSION = "0.2.9"
+CONNECTOR_VERSION = "0.3.0"
 CONNECTOR_PANEL_LABEL = "Filexa2ComfyUI"
 FILEXA_ENGINE = "comfyui"
 FILEXA_BOT_URL = "https://t.me/FilexaAIBot"
@@ -189,9 +189,13 @@ class TaskRuntime:
 @dataclass
 class ComfyProgressState:
     total_nodes: int
+    progress_node_ids: set[str] = field(default_factory=set)
     completed_nodes: set[str] = field(default_factory=set)
+    completed_progress_nodes: set[str] = field(default_factory=set)
     current_node: str = ""
+    current_progress_node: str = ""
     current_fraction: float = 0.0
+    progress_events_seen: bool = False
     last_progress: int = 15
     last_sent_progress: int = -1
     last_stage: str = ""
@@ -950,12 +954,14 @@ class Filexa2ComfyUIConnector:
         elif target in {"i2i", "i2v"}:
             raise RuntimeError(f"Saved {target.upper()} workflow expects an image reference, but this task has none.")
         model_type = _short_text(str(snapshot.get("model_hint") or _detect_model_hint(workflow) or "ComfyUI workflow"), 50)
+        progress_node_ids = _detect_progress_node_ids(workflow)
         return {
             "workflow": workflow,
             "ui_workflow": snapshot.get("ui_workflow") if isinstance(snapshot.get("ui_workflow"), dict) else {},
             "model_type": model_type,
             "target": target,
             "progress_node_count": len(workflow),
+            "progress_node_ids": progress_node_ids,
         }
 
     def _download_task_references(
@@ -1101,8 +1107,10 @@ class Filexa2ComfyUIConnector:
         if deadline.year <= 1900:
             deadline = datetime.now(timezone.utc) + timedelta(hours=1)
         last_status_at = 0.0
+        wait_started_at = time.monotonic()
         total_nodes = max(1, int(prepared.get("progress_node_count") or 1))
-        progress_state = ComfyProgressState(total_nodes=total_nodes)
+        progress_node_ids = {str(node_id) for node_id in prepared.get("progress_node_ids") or []}
+        progress_state = ComfyProgressState(total_nodes=total_nodes, progress_node_ids=progress_node_ids)
         ws = self._open_comfy_progress_socket(base, runtime.comfy_client_id)
         try:
             while not self._worker_stop.is_set():
@@ -1137,7 +1145,7 @@ class Filexa2ComfyUIConnector:
                 now = time.monotonic()
                 if now - last_status_at >= 10:
                     last_status_at = now
-                    synthetic_progress = _synthetic_comfy_progress(runtime.started_at, progress_state.last_progress)
+                    synthetic_progress = _synthetic_comfy_progress(wait_started_at, progress_state.last_progress)
                     progress_state.last_progress = max(progress_state.last_progress, synthetic_progress)
                     self._post_task_status_safe(
                         client,
@@ -1217,7 +1225,10 @@ class Filexa2ComfyUIConnector:
         elif event_type == "execution_cached":
             nodes = data.get("nodes") if isinstance(data.get("nodes"), list) else []
             for node_id in nodes:
-                state.completed_nodes.add(str(node_id))
+                clean_node_id = str(node_id)
+                state.completed_nodes.add(clean_node_id)
+                if clean_node_id in state.progress_node_ids:
+                    state.completed_progress_nodes.add(clean_node_id)
             self._maybe_post_comfy_progress(client, task, state, stage, _comfy_progress_percent(state))
         elif event_type == "executing":
             node = data.get("node")
@@ -1227,23 +1238,41 @@ class Filexa2ComfyUIConnector:
             node_id = str(node)
             if state.current_node and state.current_node != node_id:
                 state.completed_nodes.add(state.current_node)
+            if state.current_progress_node and state.current_progress_node != node_id and state.current_fraction >= 0.99:
+                state.completed_progress_nodes.add(state.current_progress_node)
             state.current_node = node_id
-            state.current_fraction = 0.0
+            if node_id in state.progress_node_ids:
+                state.current_progress_node = node_id
+                state.current_fraction = 0.0
             self._maybe_post_comfy_progress(client, task, state, stage, _comfy_progress_percent(state))
         elif event_type == "progress":
-            if data.get("node") is not None:
-                state.current_node = str(data.get("node"))
+            node_id = str(data.get("node") or "")
+            if not node_id and (data.get("value") is not None or data.get("max") is not None):
+                node_id = state.current_progress_node or "__progress__"
+            if node_id:
+                state.current_node = node_id
+                if state.current_progress_node and state.current_progress_node != node_id:
+                    state.completed_progress_nodes.add(state.current_progress_node)
+                    state.current_fraction = 0.0
+                state.current_progress_node = node_id
+                state.progress_node_ids.add(node_id)
             value = _float_or_none(data.get("value"))
             maximum = _float_or_none(data.get("max"))
             if value is not None and maximum and maximum > 0:
                 state.current_fraction = max(0.0, min(0.99, value / maximum))
+                state.progress_events_seen = True
             self._maybe_post_comfy_progress(client, task, state, stage, _comfy_progress_percent(state))
         elif event_type == "executed":
             node = data.get("node")
             if node is not None:
-                state.completed_nodes.add(str(node))
-                if state.current_node == str(node):
+                node_id = str(node)
+                state.completed_nodes.add(node_id)
+                if node_id == state.current_progress_node or node_id in state.progress_node_ids:
+                    state.completed_progress_nodes.add(node_id)
+                if state.current_node == node_id:
                     state.current_node = ""
+                if state.current_progress_node == node_id:
+                    state.current_progress_node = ""
                     state.current_fraction = 0.0
             self._maybe_post_comfy_progress(client, task, state, stage, _comfy_progress_percent(state))
 
@@ -2131,6 +2160,35 @@ def _detect_model_hint(workflow: dict[str, Any]) -> str:
     return "ComfyUI workflow"
 
 
+def _detect_progress_node_ids(workflow: dict[str, Any]) -> list[str]:
+    result: list[str] = []
+    for node_id in _sorted_node_ids(workflow):
+        node = workflow[node_id]
+        class_type = str(node.get("class_type") or "").strip().lower()
+        inputs = node.get("inputs") if isinstance(node.get("inputs"), dict) else {}
+        input_names = {str(name).strip().lower() for name in inputs.keys()}
+        has_steps = "steps" in input_names or "num_steps" in input_names
+        has_sampler_inputs = bool(
+            input_names
+            & {
+                "cfg",
+                "denoise",
+                "guider",
+                "latent_image",
+                "noise",
+                "sampler",
+                "sampler_name",
+                "scheduler",
+                "sigmas",
+            }
+        )
+        is_sampler_class = "sampler" in class_type
+        is_loader_like = any(hint in class_type for hint in ("loader", "selector", "schedulerselect"))
+        if (is_sampler_class or (has_steps and has_sampler_inputs)) and not is_loader_like:
+            result.append(str(node_id))
+    return result
+
+
 def _set_node_input(workflow: dict[str, Any], binding: dict[str, str], value: Any) -> None:
     node_id = str(binding.get("node_id") or "")
     input_name = str(binding.get("input") or "")
@@ -2477,6 +2535,19 @@ def _float_or_none(value: Any) -> float | None:
 
 
 def _comfy_progress_percent(state: ComfyProgressState) -> int:
+    if state.progress_events_seen or state.current_progress_node or state.completed_progress_nodes:
+        progress_nodes = set(state.progress_node_ids)
+        progress_nodes.update(state.completed_progress_nodes)
+        if state.current_progress_node:
+            progress_nodes.add(state.current_progress_node)
+        total = max(1, len(progress_nodes))
+        completed = min(total, len(state.completed_progress_nodes))
+        fraction = 0.0
+        if state.current_progress_node and state.current_progress_node not in state.completed_progress_nodes:
+            fraction = max(0.0, min(0.99, float(state.current_fraction or 0.0)))
+        raw = 15 + int(min(1.0, (completed + fraction) / total) * 78)
+        return max(state.last_progress, min(93, raw))
+
     total = max(1, int(state.total_nodes or 1))
     completed = min(total, len(state.completed_nodes))
     fraction = max(0.0, min(0.99, float(state.current_fraction or 0.0)))
