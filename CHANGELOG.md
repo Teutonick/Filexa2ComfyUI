@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.8 - 2026-06-02
+## 0.2.9 - 2026-06-02
 
 - Added synthetic ComfyUI generation progress fallback so Filexa percentages keep moving when `/ws` progress events are unavailable.
 - Added clearer local-connector setup guidance in Filexa settings, including a bold list of supported engines.

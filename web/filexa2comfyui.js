@@ -517,6 +517,7 @@ function buildPanel() {
       createElement("label", { class: "filexa2comfyui-row" }, [localOnly, document.createTextNode("Keep result on this PC only")]),
       createElement("div", { class: "filexa2comfyui-row" }, [connectButton, disconnectButton, cancelButton]),
     ]),
+    referencePreviewBox,
     createElement("section", { class: "filexa2comfyui-grid" }, [
       createElement("h3", { text: "Snapshots" }),
       createElement("div", { class: "filexa2comfyui-hint" }, [
@@ -539,7 +540,6 @@ function buildPanel() {
         },
       }),
     ]),
-    referencePreviewBox,
     createElement("section", { class: "filexa2comfyui-grid" }, [
       createElement("h3", { text: "Diagnostics" }),
       diagnostics,
