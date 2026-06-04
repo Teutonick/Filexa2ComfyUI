@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.2 - 2026-06-04
+
+- Excluded README demo GIFs from the Comfy Registry package to keep published installs lean while
+  leaving GitHub documentation media unchanged.
+
 ## 0.3.1 - 2026-06-02
 
 - Increased workflow snapshot value tails in the ComfyUI panel from 15 to 30 characters so long

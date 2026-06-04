@@ -18,3 +18,6 @@ Thumbs.db
 tests/
 *.psd
 *.tmp
+
+# Documentation demo media for GitHub README; not needed in the Registry install archive.
+docs/img/*.gif
